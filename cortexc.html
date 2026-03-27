@@ -4,19 +4,82 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CortexC</title>
+    <title>CortexC - Memory Visualizer</title>
     <link rel="stylesheet" href="cortexc.css" />
 </head>
 
 <body>
-    <h1>CortexC</h1>
+    <header>
+        <h1>CortexC</h1>
+        <span class="subtitle">C Memory Visualizer</span>
+        <div class="controls">
+            <button id="runBtn">&#9654; Run</button>
+            <button id="stepBtn">&#9197; Step</button>
+            <button id="resetBtn">&#8634; Reset</button>
+            <select id="speedSelect">
+                <option value="1000">Slow</option>
+                <option value="500" selected>Normal</option>
+                <option value="150">Fast</option>
+            </select>
+            <span class="step-counter" id="stepCounter">Step 0</span>
+        </div>
+    </header>
 
-    <!-- TODO: Fix the layout please keep the textarea -->
-    <textarea id="codeInput" placeholder="code region"></textarea>
-    <button id="parseBtn">Parse Code</button>
+    <main>
+        <section class="code-panel">
+            <div class="panel-header">Code</div>
+            <div class="code-editor">
+                <div class="line-numbers" id="lineNumbers"></div>
+                <textarea id="codeInput" spellcheck="false">int globalCount = 10;
 
-    <!-- TODO envelop the output into a console looking design -->
-    <pre id="output">output</pre>
+int add(int a, int b) {
+    int result = a + b;
+    return result;
+}
+
+int main() {
+    int x = 5;
+    int y = 10;
+    int sum = add(x, y);
+    int *ptr = (int*)malloc(sizeof(int));
+    *ptr = 42;
+    int arr[4] = {10, 20, 30, 40};
+    arr[2] = 99;
+    printf("sum = %d, *ptr = %d\n", sum, *ptr);
+    free(ptr);
+    return 0;
+}</textarea>
+            </div>
+        </section>
+
+        <section class="memory-panel">
+            <div class="memory-regions">
+                <div class="memory-region stack-region">
+                    <div class="region-header stack-header">Stack</div>
+                    <div id="stackViz" class="region-content">
+                        <div class="empty-state">Run code to see stack</div>
+                    </div>
+                </div>
+                <div class="memory-region heap-region">
+                    <div class="region-header heap-header">Heap</div>
+                    <div id="heapViz" class="region-content">
+                        <div class="empty-state">No heap allocations</div>
+                    </div>
+                </div>
+                <div class="memory-region global-region">
+                    <div class="region-header global-header">Global / Static</div>
+                    <div id="globalViz" class="region-content">
+                        <div class="empty-state">No global variables</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <section class="console-panel">
+        <div class="panel-header console-header">Console Output</div>
+        <pre id="consoleOutput"></pre>
+    </section>
 
     <script src="cortexc.js"></script>
 </body>

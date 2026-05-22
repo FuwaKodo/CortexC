@@ -594,7 +594,7 @@ class MemoryModel {
     }
 
     freeHeap(addr) {
-        if (this.heap.has(addr)) {
+        if (this.heap.has(addr) && !this.heap.get(addr).freed) {
             this.heap.get(addr).freed = true;
             return true;
         }
@@ -622,40 +622,69 @@ class MemoryModel {
         return 0;
     }
 
-    deref(addr) {
-        const hv = this.getHeapValue(addr);
-        if (hv !== 0 || this.heap.size > 0) {
-            for (const [base, block] of this.heap) {
-                if (addr >= base && addr < base + block.size) return block.values[Math.floor((addr - base) / 4)];
-            }
-        }
-        for (const frame of this.stack) {
-            for (const [, v] of frame.vars) {
-                if (!v.isArray && v.addr === addr) return v.value;
-                if (v.isArray) {
-                    const elemSize = sizeOf(v.elemType || v.type);
-                    const idx = Math.floor((addr - v.addr) / elemSize);
-                    if (addr >= v.addr && idx < v.size) return v.values[idx];
+    resolveAddress(addr) {
+        for (const [base, block] of this.heap) {
+            if (addr >= base && addr < base + block.size) {
+                const idx = Math.floor((addr - base) / 4);
+                if (idx < block.elemCount) {
+                    return { kind: "heap", base, block, index: idx };
                 }
             }
         }
-        for (const [, v] of this.globals) {
-            if (!v.isArray && v.addr === addr) return v.value;
+
+        for (const frame of this.stack) {
+            for (const [name, v] of frame.vars) {
+                if (!v.isArray && v.addr === addr) {
+                    return { kind: "stack_scalar", frame, name, variable: v };
+                }
+                if (v.isArray) {
+                    const elemSize = sizeOf(v.elemType || v.type);
+                    const idx = Math.floor((addr - v.addr) / elemSize);
+                    if (addr >= v.addr && idx >= 0 && idx < v.size) {
+                        return { kind: "stack_array", frame, name, variable: v, index: idx };
+                    }
+                }
+            }
         }
-        return 0;
+
+        for (const [name, v] of this.globals) {
+            if (!v.isArray && v.addr === addr) {
+                return { kind: "global_scalar", name, variable: v };
+            }
+            if (v.isArray) {
+                const elemSize = sizeOf(v.elemType || v.type);
+                const idx = Math.floor((addr - v.addr) / elemSize);
+                if (addr >= v.addr && idx >= 0 && idx < v.size) {
+                    return { kind: "global_array", name, variable: v, index: idx };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    deref(addr) {
+        const resolved = this.resolveAddress(addr);
+        if (!resolved) return 0;
+        if (resolved.kind === "heap") return resolved.block.values[resolved.index];
+        if (resolved.kind.endsWith("_array")) return resolved.variable.values[resolved.index];
+        return resolved.variable.value;
     }
 
     setDeref(addr, value) {
-        if (this.setHeapValue(addr, value)) return true;
-        for (const frame of this.stack) {
-            for (const [, v] of frame.vars) {
-                if (!v.isArray && v.addr === addr) { v.value = value; return true; }
-            }
+        const resolved = this.resolveAddress(addr);
+        if (!resolved) return false;
+        if (resolved.kind === "heap") {
+            if (resolved.block.freed) return false;
+            resolved.block.values[resolved.index] = value;
+            return true;
         }
-        for (const [, v] of this.globals) {
-            if (!v.isArray && v.addr === addr) { v.value = value; return true; }
+        if (resolved.kind.endsWith("_array")) {
+            resolved.variable.values[resolved.index] = value;
+            return true;
         }
-        return false;
+        resolved.variable.value = value;
+        return true;
     }
 }
 
@@ -665,8 +694,16 @@ class CallPending {
     constructor() { this.name = "CallPending"; }
 }
 
+class RuntimeCrash extends Error {
+    constructor(message, line = null) {
+        super(message);
+        this.name = "RuntimeCrash";
+        this.line = line;
+    }
+}
+
 class Interpreter {
-    constructor(memory, onOutput, onError) {
+    constructor(memory, onOutput, onError, onCrash) {
         this.mem = memory;
         this.program = null;
         this.callStack = [];
@@ -675,8 +712,13 @@ class Interpreter {
         this.currentLine = -1;
         this.onOutput = onOutput || (() => {});
         this.onError = onError || (() => {});
+        this.onCrash = onCrash || (() => {});
         this.callResults = [];
         this.callIndex = 0;
+    }
+
+    crash(message, line = this.currentLine > 0 ? this.currentLine : null) {
+        throw new RuntimeCrash(message, line);
     }
 
     load(program) {
@@ -698,16 +740,14 @@ class Interpreter {
 
     start() {
         if (!this.program.functions["main"]) {
-            this.onError("Error: no main() function found");
-            this.finished = true;
-            return;
+            this.crash("No main() function found.");
         }
         this.callFunction("main", []);
     }
 
     callFunction(name, argValues) {
         const func = this.program.functions[name];
-        if (!func) { this.onError(`Error: undefined function '${name}'`); return; }
+        if (!func) this.crash(`Undefined function '${name}'.`);
 
         this.mem.pushFrame(name);
         for (let i = 0; i < func.params.length; i++) {
@@ -748,7 +788,10 @@ class Interpreter {
                 ctx.pc--;
                 return true;
             }
-            this.onError(e.message);
+            const message = e instanceof Error ? e.message : String(e);
+            const line = e instanceof RuntimeCrash ? e.line : this.currentLine;
+            this.currentLine = line ?? this.currentLine;
+            this.onCrash(message, line ?? null);
             this.finished = true;
             return false;
         }
@@ -795,32 +838,53 @@ class Interpreter {
             }
             case "assign": {
                 const val = this.evalExpr(stmt.value);
-                this.mem.setLocal(stmt.name, val);
+                if (!this.mem.setLocal(stmt.name, val)) {
+                    this.crash(`Undefined variable '${stmt.name}'.`, stmt.line);
+                }
                 break;
             }
             case "compound_assign": {
                 const v = this.mem.getVar(stmt.name);
-                if (!v) break;
+                if (!v) this.crash(`Undefined variable '${stmt.name}'.`, stmt.line);
                 const rhs = this.evalExpr(stmt.value);
                 const ops = { "+=": (a, b) => a + b, "-=": (a, b) => a - b, "*=": (a, b) => a * b, "/=": (a, b) => Math.trunc(a / b) };
+                if ((stmt.op === "/=") && rhs === 0) {
+                    this.crash(`Division by zero while updating '${stmt.name}'.`, stmt.line);
+                }
                 this.mem.setLocal(stmt.name, ops[stmt.op](v.value, rhs));
                 break;
             }
             case "unary_stmt": {
                 const v = this.mem.getVar(stmt.name);
-                if (!v) break;
+                if (!v) this.crash(`Undefined variable '${stmt.name}'.`, stmt.line);
                 this.mem.setLocal(stmt.name, stmt.op === "++" ? v.value + 1 : v.value - 1);
                 break;
             }
             case "deref_assign": {
                 const ptr = this.mem.getVar(stmt.target);
-                if (!ptr) break;
+                if (!ptr) this.crash(`Undefined variable '${stmt.target}'.`, stmt.line);
+                if (ptr.value === 0) this.crash(`Null pointer write through '${stmt.target}'.`, stmt.line);
+                const target = this.mem.resolveAddress(ptr.value);
+                if (!target) {
+                    this.crash(`Invalid pointer write at 0x${ptr.value.toString(16).toUpperCase()}.`, stmt.line);
+                }
+                if (target.kind === "heap" && target.block.freed) {
+                    this.crash(`Write after free at 0x${ptr.value.toString(16).toUpperCase()}.`, stmt.line);
+                }
                 const val = this.evalExpr(stmt.value);
-                this.mem.setDeref(ptr.value, val);
+                if (!this.mem.setDeref(ptr.value, val)) {
+                    this.crash(`Invalid pointer write at 0x${ptr.value.toString(16).toUpperCase()}.`, stmt.line);
+                }
                 break;
             }
             case "array_assign": {
+                const arrayVar = this.mem.getVar(stmt.name);
+                if (!arrayVar) this.crash(`Undefined array '${stmt.name}'.`, stmt.line);
+                if (!arrayVar.isArray) this.crash(`'${stmt.name}' is not an array.`, stmt.line);
                 const idx = this.evalExpr(stmt.index);
+                if (idx < 0 || idx >= arrayVar.size) {
+                    this.crash(`Array index ${idx} is out of bounds for '${stmt.name}'.`, stmt.line);
+                }
                 const val = this.evalExpr(stmt.value);
                 this.mem.setArrayElem(stmt.name, idx, val);
                 break;
@@ -839,8 +903,9 @@ class Interpreter {
             }
             case "free": {
                 const addr = this.evalExpr(stmt.arg);
+                if (addr === 0) break;
                 if (!this.mem.freeHeap(addr)) {
-                    this.onError(`Warning: free() on invalid address 0x${addr.toString(16)}`);
+                    this.crash(`Invalid free() address 0x${addr.toString(16).toUpperCase()}.`, stmt.line);
                 }
                 break;
             }
@@ -863,12 +928,15 @@ class Interpreter {
             case "str": return node.value;
             case "var": {
                 const v = this.mem.getVar(node.name);
-                if (!v) { this.onError(`Warning: undefined variable '${node.name}'`); return 0; }
+                if (!v) this.crash(`Undefined variable '${node.name}'.`);
                 if (v.isArray) return v.addr;
                 return v.value;
             }
             case "binop": {
                 const l = this.evalExpr(node.left), r = this.evalExpr(node.right);
+                if ((node.op === "/" || node.op === "%") && r === 0) {
+                    this.crash("Division by zero.");
+                }
                 const ops = {
                     "+": (a, b) => a + b, "-": (a, b) => a - b, "*": (a, b) => a * b,
                     "/": (a, b) => b !== 0 ? Math.trunc(a / b) : 0, "%": (a, b) => b !== 0 ? a % b : 0,
@@ -881,9 +949,21 @@ class Interpreter {
             }
             case "negate": return -this.evalExpr(node.expr);
             case "not": return this.evalExpr(node.expr) ? 0 : 1;
-            case "addr_of": return this.mem.getVarAddr(node.name);
+            case "addr_of": {
+                const v = this.mem.getVar(node.name);
+                if (!v) this.crash(`Undefined variable '${node.name}'.`);
+                return v.addr;
+            }
             case "deref": {
                 const addr = this.evalExpr(node.expr);
+                if (addr === 0) this.crash("Null pointer dereference.");
+                const target = this.mem.resolveAddress(addr);
+                if (!target) {
+                    this.crash(`Invalid pointer dereference at 0x${addr.toString(16).toUpperCase()}.`);
+                }
+                if (target.kind === "heap" && target.block.freed) {
+                    this.crash(`Use after free at 0x${addr.toString(16).toUpperCase()}.`);
+                }
                 return this.mem.deref(addr);
             }
             case "sizeof": return sizeOf(node.type);
@@ -897,14 +977,20 @@ class Interpreter {
                     return this.callResults[this.callIndex++];
                 }
                 const func = this.program.functions[node.name];
-                if (!func) { this.onError(`Error: undefined function '${node.name}'`); return 0; }
+                if (!func) this.crash(`Undefined function '${node.name}'.`);
                 const args = node.args.map(a => this.evalExpr(a));
                 this.callFunction(node.name, args);
                 throw new CallPending();
             }
             case "array_access": {
+                const arrayVar = this.mem.getVar(node.name);
+                if (!arrayVar) this.crash(`Undefined array '${node.name}'.`);
+                if (!arrayVar.isArray) this.crash(`'${node.name}' is not an array.`);
                 const idx = this.evalExpr(node.index);
-                return this.mem.getArrayElem(node.name, idx);
+                if (idx < 0 || idx >= arrayVar.size) {
+                    this.crash(`Array index ${idx} is out of bounds for '${node.name}'.`);
+                }
+                return arrayVar.values[idx];
             }
             default: return 0;
         }
@@ -969,6 +1055,49 @@ class Visualizer {
         return `func-${funcIdx % 4}`;
     }
 
+    createSvgEl(name, attrs = {}) {
+        const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+        for (const [key, value] of Object.entries(attrs)) {
+            el.setAttribute(key, value);
+        }
+        return el;
+    }
+
+    escapeHtml(value) {
+        return String(value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+    }
+
+    allocationHue(addr) {
+        const hues = [202, 158, 34, 274, 332, 12];
+        return hues[Math.abs((addr >>> 2) % hues.length)];
+    }
+
+    allocationMeta(addr, freed = false) {
+        return { hue: this.allocationHue(addr), freed };
+    }
+
+    allocationStyleAttr(allocation) {
+        return allocation ? ` style="--alloc-hue:${allocation.hue}"` : "";
+    }
+
+    renderMemName(labelHtml) {
+        return `<span class="mem-name"><span class="mem-name-label">${labelHtml}</span></span>`;
+    }
+
+    renderPointerValue(name, value, type, extraClasses = "", allocation = null) {
+        const classes = ["mem-value", "pointer-val", "pointer-source"];
+        if (extraClasses) classes.push(extraClasses);
+        if (allocation) classes.push("allocation-linked");
+        if (allocation && allocation.freed) classes.push("allocation-freed");
+
+        return `<span class="${classes.join(" ")}"${this.allocationStyleAttr(allocation)}><span class="pointer-chip-prefix">ptr</span><span class="pointer-chip-value">${this.formatVal(value, type)}</span></span>`;
+    }
+
     renderStack(mem) {
         if (mem.stack.length === 0) {
             this.stackEl.innerHTML = '<div class="empty-state">Run code to see stack</div>';
@@ -1007,8 +1136,8 @@ class Visualizer {
             for (const [name, v] of frame.vars) {
                 const isNew = this.isNewVar(frame.name, name);
                 if (v.isArray) {
-                    html += `<div class="mem-cell ${isNew ? "new-cell" : ""}">`;
-                    html += `<span class="mem-name">${v.type.base} ${name}[${v.size}]</span>`;
+                    html += `<div class="mem-cell ${isNew ? "new-cell" : ""}" data-base="${v.addr}">`;
+                    html += this.renderMemName(`${v.type.base} ${name}[${v.size}]`);
                     html += `<span></span>`;
                     html += `<span class="mem-addr">${this.hex(v.addr)}</span>`;
                     html += `</div>`;
@@ -1021,9 +1150,21 @@ class Visualizer {
                     const ptrClass = this.isPointer(v.type) ? "pointer-val" : "";
                     const nullClass = this.isPointer(v.type) && v.value === 0 ? "null-val" : "";
                     const typeStr = v.type.base + (v.type.pointer > 0 ? "*".repeat(v.type.pointer) : "");
-                    html += `<div class="mem-cell ${isNew ? "new-cell" : ""}" data-addr="${v.addr}">`;
-                    html += `<span class="mem-name"><span class="mem-type">${typeStr}</span> ${name}</span>`;
-                    html += `<span class="mem-value ${ptrClass} ${nullClass}">${this.formatVal(v.value, v.type)}</span>`;
+                    const allocation = this.isPointer(v.type) && mem.heap.has(v.value)
+                        ? this.allocationMeta(v.value, mem.heap.get(v.value).freed)
+                        : null;
+                    const cellClasses = ["mem-cell"];
+                    if (isNew) cellClasses.push("new-cell");
+                    if (allocation) cellClasses.push("allocation-linked");
+                    if (allocation && allocation.freed) cellClasses.push("allocation-freed");
+
+                    html += `<div class="${cellClasses.join(" ")}" data-addr="${v.addr}"${this.allocationStyleAttr(allocation)}>`;
+                    html += this.renderMemName(`<span class="mem-type">${typeStr}</span> ${name}`);
+                    if (this.isPointer(v.type)) {
+                        html += this.renderPointerValue(name, v.value, v.type, `${ptrClass} ${nullClass}`.trim(), allocation);
+                    } else {
+                        html += `<span class="mem-value ${ptrClass} ${nullClass}">${this.formatVal(v.value, v.type)}</span>`;
+                    }
                     html += `<span class="mem-addr">${this.hex(v.addr)}</span>`;
                     html += `</div>`;
                 }
@@ -1041,10 +1182,13 @@ class Visualizer {
 
         let html = "";
         for (const [addr, block] of mem.heap) {
-            const freedClass = block.freed ? "freed" : "";
-            html += `<div class="heap-block ${freedClass}" data-base="${addr}">`;
-            html += `<div class="heap-block-header">`;
-            html += `<span>${this.hex(addr)}</span>`;
+            const allocation = this.allocationMeta(addr, block.freed);
+            const blockClasses = ["heap-block", "allocation-linked"];
+            if (block.freed) blockClasses.push("freed", "allocation-freed");
+
+            html += `<div class="${blockClasses.join(" ")}" data-base="${addr}"${this.allocationStyleAttr(allocation)}>`;
+            html += `<div class="heap-block-header" data-addr="${addr}">`;
+            html += `<span class="heap-block-title"><span class="heap-badge">malloc</span><span class="heap-block-address">${this.hex(addr)}</span></span>`;
             html += `<span class="size-info">${block.size} bytes${block.freed ? " (freed)" : ""}</span>`;
             html += `</div>`;
             html += `<div class="heap-block-body">`;
@@ -1074,8 +1218,8 @@ class Visualizer {
         let html = "";
         for (const [name, v] of mem.globals) {
             if (v.isArray) {
-                html += `<div class="global-cell">`;
-                html += `<span class="mem-name">${v.type.base} ${name}[${v.size}]</span>`;
+                html += `<div class="global-cell" data-base="${v.addr}">`;
+                html += this.renderMemName(`${v.type.base} ${name}[${v.size}]`);
                 html += `<span></span>`;
                 html += `<span class="mem-addr">${this.hex(v.addr)}</span>`;
                 html += `</div>`;
@@ -1087,9 +1231,20 @@ class Visualizer {
             } else {
                 const typeStr = v.type.base + (v.type.pointer > 0 ? "*".repeat(v.type.pointer) : "");
                 const ptrClass = this.isPointer(v.type) ? "pointer-val" : "";
-                html += `<div class="global-cell">`;
-                html += `<span class="mem-name"><span class="mem-type">${typeStr}</span> ${name}</span>`;
-                html += `<span class="mem-value ${ptrClass}">${this.formatVal(v.value, v.type)}</span>`;
+                const allocation = this.isPointer(v.type) && mem.heap.has(v.value)
+                    ? this.allocationMeta(v.value, mem.heap.get(v.value).freed)
+                    : null;
+                const cellClasses = ["global-cell"];
+                if (allocation) cellClasses.push("allocation-linked");
+                if (allocation && allocation.freed) cellClasses.push("allocation-freed");
+
+                html += `<div class="${cellClasses.join(" ")}" data-addr="${v.addr}"${this.allocationStyleAttr(allocation)}>`;
+                html += this.renderMemName(`<span class="mem-type">${typeStr}</span> ${name}`);
+                if (this.isPointer(v.type)) {
+                    html += this.renderPointerValue(name, v.value, v.type, ptrClass, allocation);
+                } else {
+                    html += `<span class="mem-value ${ptrClass}">${this.formatVal(v.value, v.type)}</span>`;
+                }
                 html += `<span class="mem-addr">${this.hex(v.addr)}</span>`;
                 html += `</div>`;
             }
@@ -1113,8 +1268,17 @@ const consoleOutput = document.getElementById("consoleOutput");
 const runBtn = document.getElementById("runBtn");
 const stepBtn = document.getElementById("stepBtn");
 const resetBtn = document.getElementById("resetBtn");
+const themeToggleBtn = document.getElementById("themeToggleBtn");
 const speedSelect = document.getElementById("speedSelect");
 const stepCounter = document.getElementById("stepCounter");
+const syntaxBadge = document.getElementById("syntaxBadge");
+const syntaxMessage = document.getElementById("syntaxMessage");
+const crashOverlay = document.getElementById("crashOverlay");
+const crashReason = document.getElementById("crashReason");
+const crashLine = document.getElementById("crashLine");
+const crashCloseBtn = document.getElementById("crashCloseBtn");
+const THEME_STORAGE_KEY = "cortexc-theme";
+const INDENT_UNIT = "    ";
 
 const mem = new MemoryModel();
 const viz = new Visualizer();
@@ -1122,31 +1286,352 @@ let interp = null;
 let running = false;
 let runTimer = null;
 let highlightEl = null;
+let errorHighlightEl = null;
+let editorDiagnostic = {
+    severity: "ok",
+    label: "Syntax OK",
+    message: "Ready to edit and run.",
+    line: null,
+};
+let runtimeCrash = null;
 
-function updateLineNumbers() {
-    const lines = codeInput.value.split("\n");
-    lineNumbers.innerHTML = lines.map((_, i) =>
-        `<div>${i + 1}</div>`
-    ).join("");
+function getLineStart(text, index) {
+    const safeIndex = Math.max(0, Math.min(index, text.length));
+    return text.lastIndexOf("\n", safeIndex - 1) + 1;
 }
 
-function highlightLine(lineNum) {
-    if (highlightEl) highlightEl.remove();
-    if (lineNum < 1) return;
+function getLineEnd(text, index) {
+    const safeIndex = Math.max(0, Math.min(index, text.length));
+    const nextBreak = text.indexOf("\n", safeIndex);
+    return nextBreak === -1 ? text.length : nextBreak;
+}
+
+function getLineIndent(line) {
+    return (line.match(/^[ \t]*/) || [""])[0];
+}
+
+function getCaretLine() {
+    return codeInput.value.slice(0, codeInput.selectionStart).split("\n").length;
+}
+
+function getActiveEditorLine() {
+    if (interp && interp.currentLine > 0) return interp.currentLine;
+    return getCaretLine();
+}
+
+function setLineOverlay(existingEl, lineNum, className) {
+    if (existingEl) existingEl.remove();
+    const totalLines = codeInput.value.split("\n").length;
+    if (!lineNum || lineNum < 1 || lineNum > totalLines) return null;
 
     const lineHeight = parseFloat(getComputedStyle(codeInput).lineHeight);
     const paddingTop = parseFloat(getComputedStyle(codeInput).paddingTop);
     const top = paddingTop + (lineNum - 1) * lineHeight - codeInput.scrollTop;
 
-    highlightEl = document.createElement("div");
-    highlightEl.className = "line-highlight";
-    highlightEl.style.top = top + "px";
-    highlightEl.style.height = lineHeight + "px";
-    codeInput.parentElement.appendChild(highlightEl);
+    const el = document.createElement("div");
+    el.className = className;
+    el.style.top = top + "px";
+    el.style.height = lineHeight + "px";
+    codeInput.parentElement.appendChild(el);
+    return el;
+}
 
-    const nums = lineNumbers.children;
-    for (let i = 0; i < nums.length; i++) {
-        nums[i].className = (i + 1 === lineNum) ? "active-line" : "";
+function updateLineNumbers(activeLine = getActiveEditorLine(), errorLine = editorDiagnostic.severity === "error" ? editorDiagnostic.line : null) {
+    const lines = codeInput.value.split("\n");
+    lineNumbers.innerHTML = lines.map((_, i) => {
+        const lineNumber = i + 1;
+        const classes = [];
+        if (lineNumber === activeLine) classes.push("active-line");
+        if (lineNumber === errorLine) classes.push("error-line");
+        const classAttr = classes.length > 0 ? ` class="${classes.join(" ")}"` : "";
+        return `<div${classAttr}>${lineNumber}</div>`;
+    }).join("");
+}
+
+function updateSyntaxStatus() {
+    if (runtimeCrash) {
+        syntaxBadge.className = "syntax-badge syntax-error";
+        syntaxBadge.textContent = "Runtime Crash";
+        syntaxMessage.textContent = runtimeCrash.line
+            ? `Line ${runtimeCrash.line}: ${runtimeCrash.reason}`
+            : runtimeCrash.reason;
+        return;
+    }
+
+    syntaxBadge.className = `syntax-badge syntax-${editorDiagnostic.severity}`;
+    syntaxBadge.textContent = editorDiagnostic.label;
+    syntaxMessage.textContent = editorDiagnostic.message;
+}
+
+function showCrashOverlay(reason, line = null) {
+    runtimeCrash = { reason, line };
+    crashReason.textContent = reason;
+    crashLine.textContent = line ? `Line ${line}` : "Execution stopped immediately.";
+    crashOverlay.hidden = false;
+    updateSyntaxStatus();
+    refreshEditorDecorations();
+}
+
+function clearCrashOverlay() {
+    runtimeCrash = null;
+    crashOverlay.hidden = true;
+    crashReason.textContent = "Execution stopped because of a runtime error.";
+    crashLine.textContent = "";
+    updateSyntaxStatus();
+}
+
+function dismissCrashOverlay() {
+    clearCrashOverlay();
+    codeInput.focus();
+}
+
+function handleRuntimeCrash(reason, line = null) {
+    clearInterval(runTimer);
+    running = false;
+    if (interp) interp.finished = true;
+    runBtn.textContent = "\u25B6 Run";
+    runBtn.classList.remove("running");
+
+    appendConsole("\n=== PROGRAM CRASHED ===\n", "console-error");
+    appendConsole((line ? `Line ${line}: ` : "") + reason + "\n", "console-error");
+    showCrashOverlay(reason, line);
+}
+
+function analyzeEditorCode() {
+    const code = codeInput.value;
+    if (code.trim() === "") {
+        return {
+            severity: "warning",
+            label: "Empty",
+            message: "Editor is empty.",
+            line: null,
+        };
+    }
+
+    try {
+        const tokens = tokenize(code);
+        const parser = new Parser(tokens);
+        const program = parser.parse();
+
+        if (!program.functions.main) {
+            return {
+                severity: "warning",
+                label: "Warning",
+                message: "Syntax OK. Add a main() function to run the program.",
+                line: null,
+            };
+        }
+
+        return {
+            severity: "ok",
+            label: "Syntax OK",
+            message: "No syntax errors detected.",
+            line: null,
+        };
+    } catch (e) {
+        const message = String(e.message || e);
+        const lineMatch = message.match(/line\s+(\d+)/i);
+        return {
+            severity: "error",
+            label: "Syntax Error",
+            message,
+            line: lineMatch ? Number(lineMatch[1]) : null,
+        };
+    }
+}
+
+function validateEditorCode() {
+    editorDiagnostic = analyzeEditorCode();
+    updateSyntaxStatus();
+    return editorDiagnostic;
+}
+
+function refreshEditorDecorations() {
+    const activeLine = getActiveEditorLine();
+    const errorLine = runtimeCrash?.line ?? (editorDiagnostic.severity === "error" ? editorDiagnostic.line : null);
+
+    if (activeLine && errorLine && activeLine === errorLine) {
+        if (errorHighlightEl) {
+            errorHighlightEl.remove();
+            errorHighlightEl = null;
+        }
+        highlightEl = setLineOverlay(highlightEl, activeLine, "line-highlight line-highlight-error");
+    } else {
+        errorHighlightEl = setLineOverlay(errorHighlightEl, errorLine, "diagnostic-line-highlight");
+        highlightEl = setLineOverlay(highlightEl, activeLine, "line-highlight");
+    }
+
+    updateLineNumbers(activeLine, errorLine);
+}
+
+function handleEditorContentChange() {
+    if (interp) {
+        doReset();
+        return;
+    }
+
+    clearCrashOverlay();
+    validateEditorCode();
+    refreshEditorDecorations();
+}
+
+function commitEditorChange(nextValue, selectionStart, selectionEnd = selectionStart) {
+    codeInput.value = nextValue;
+    codeInput.selectionStart = selectionStart;
+    codeInput.selectionEnd = selectionEnd;
+    handleEditorContentChange();
+}
+
+function indentSelection() {
+    const text = codeInput.value;
+    const start = codeInput.selectionStart;
+    const end = codeInput.selectionEnd;
+
+    if (start === end) {
+        commitEditorChange(
+            text.slice(0, start) + INDENT_UNIT + text.slice(end),
+            start + INDENT_UNIT.length
+        );
+        return;
+    }
+
+    const firstLineStart = getLineStart(text, start);
+    const selectionEndIndex = end > start && text[end - 1] === "\n" ? end - 1 : end;
+    const lastLineEnd = getLineEnd(text, selectionEndIndex);
+    const block = text.slice(firstLineStart, lastLineEnd);
+    const lines = block.split("\n");
+    const indentedBlock = lines.map(line => INDENT_UNIT + line).join("\n");
+    const nextValue = text.slice(0, firstLineStart) + indentedBlock + text.slice(lastLineEnd);
+    const nextStart = start + INDENT_UNIT.length;
+    const nextEnd = end + (INDENT_UNIT.length * lines.length);
+
+    commitEditorChange(nextValue, nextStart, nextEnd);
+}
+
+function outdentSelection() {
+    const text = codeInput.value;
+    const start = codeInput.selectionStart;
+    const end = codeInput.selectionEnd;
+    const firstLineStart = getLineStart(text, start);
+    const selectionEndIndex = end > start && text[end - 1] === "\n" ? end - 1 : end;
+    const lastLineEnd = getLineEnd(text, selectionEndIndex);
+    const block = text.slice(firstLineStart, lastLineEnd);
+    const lines = block.split("\n");
+
+    let removedFromFirstLine = 0;
+    let removedTotal = 0;
+
+    const outdentedBlock = lines.map((line, index) => {
+        let removed = 0;
+
+        if (line.startsWith(INDENT_UNIT)) {
+            removed = INDENT_UNIT.length;
+            line = line.slice(INDENT_UNIT.length);
+        } else {
+            const partialIndent = line.match(/^[ \t]{1,4}/);
+            if (partialIndent) {
+                removed = partialIndent[0].length;
+                line = line.slice(removed);
+            }
+        }
+
+        if (index === 0) removedFromFirstLine = removed;
+        removedTotal += removed;
+        return line;
+    }).join("\n");
+
+    if (removedTotal === 0) return;
+
+    const nextValue = text.slice(0, firstLineStart) + outdentedBlock + text.slice(lastLineEnd);
+    if (start === end) {
+        const nextCaret = Math.max(firstLineStart, start - removedFromFirstLine);
+        commitEditorChange(nextValue, nextCaret);
+        return;
+    }
+
+    const nextStart = Math.max(firstLineStart, start - removedFromFirstLine);
+    const nextEnd = Math.max(nextStart, end - removedTotal);
+    commitEditorChange(nextValue, nextStart, nextEnd);
+}
+
+function insertIndentedNewline() {
+    const text = codeInput.value;
+    const start = codeInput.selectionStart;
+    const end = codeInput.selectionEnd;
+    const lineStart = getLineStart(text, start);
+    const lineEnd = getLineEnd(text, end);
+    const lineText = text.slice(lineStart, lineEnd);
+    const beforeCaret = text.slice(lineStart, start);
+    const afterCaret = text.slice(end, lineEnd);
+    const baseIndent = getLineIndent(lineText);
+    const trimmedBefore = beforeCaret.trimEnd();
+    const trimmedAfter = afterCaret.trimStart();
+    const shouldIncreaseIndent = /{$/.test(trimmedBefore);
+    const shouldFormatBraceBlock = shouldIncreaseIndent && trimmedAfter.startsWith("}");
+
+    if (shouldFormatBraceBlock) {
+        const insertion = `\n${baseIndent}${INDENT_UNIT}\n${baseIndent}`;
+        const caretPos = start + 1 + baseIndent.length + INDENT_UNIT.length;
+        commitEditorChange(
+            text.slice(0, start) + insertion + text.slice(end),
+            caretPos
+        );
+        return;
+    }
+
+    const nextIndent = shouldIncreaseIndent ? baseIndent + INDENT_UNIT : baseIndent;
+    const insertion = `\n${nextIndent}`;
+    const caretPos = start + insertion.length;
+    commitEditorChange(
+        text.slice(0, start) + insertion + text.slice(end),
+        caretPos
+    );
+}
+
+function insertClosingBraceWithOutdent() {
+    const text = codeInput.value;
+    const start = codeInput.selectionStart;
+    const end = codeInput.selectionEnd;
+    if (start !== end) return false;
+
+    const lineStart = getLineStart(text, start);
+    const beforeCaret = text.slice(lineStart, start);
+    if (!/^\s+$/.test(beforeCaret)) return false;
+
+    const nextIndent = beforeCaret.length >= INDENT_UNIT.length
+        ? beforeCaret.slice(0, beforeCaret.length - INDENT_UNIT.length)
+        : "";
+    const nextValue = text.slice(0, lineStart) + nextIndent + "}" + text.slice(end);
+    const nextCaret = lineStart + nextIndent.length + 1;
+    commitEditorChange(nextValue, nextCaret);
+    return true;
+}
+
+function applyTheme(theme) {
+    const normalizedTheme = theme === "light" ? "light" : "dark";
+    document.body.dataset.theme = normalizedTheme;
+    themeToggleBtn.textContent = normalizedTheme === "light" ? "Dark Mode" : "White Mode";
+    themeToggleBtn.setAttribute("aria-pressed", normalizedTheme === "light" ? "true" : "false");
+    updateSyntaxStatus();
+    refreshEditorDecorations();
+}
+
+function loadThemePreference() {
+    try {
+        return localStorage.getItem(THEME_STORAGE_KEY) || "dark";
+    } catch {
+        return "dark";
+    }
+}
+
+function toggleTheme() {
+    const nextTheme = document.body.dataset.theme === "light" ? "dark" : "light";
+    applyTheme(nextTheme);
+
+    try {
+        localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    } catch {
+        // Ignore storage failures; the toggle still works for the current session.
     }
 }
 
@@ -1161,6 +1646,7 @@ function appendConsole(text, type = "") {
 function initInterpreter() {
     const code = codeInput.value;
     consoleOutput.textContent = "";
+    clearCrashOverlay();
 
     try {
         const tokens = tokenize(code);
@@ -1170,16 +1656,24 @@ function initInterpreter() {
         interp = new Interpreter(
             mem,
             (msg) => appendConsole(msg),
-            (msg) => appendConsole(msg + "\n", "console-error")
+            (msg) => appendConsole(msg + "\n", "console-error"),
+            (reason, line) => handleRuntimeCrash(reason, line)
         );
         interp.load(program);
         interp.start();
+        if (runtimeCrash) return false;
         viz.render(mem);
-        highlightLine(interp.currentLine);
         stepCounter.textContent = "Step 0";
+        refreshEditorDecorations();
         return true;
     } catch (e) {
+        if (e instanceof RuntimeCrash) {
+            handleRuntimeCrash(e.message, e.line ?? null);
+            return false;
+        }
         appendConsole(e.message + "\n", "console-error");
+        validateEditorCode();
+        refreshEditorDecorations();
         return false;
     }
 }
@@ -1188,7 +1682,6 @@ function doStep() {
     if (!interp || interp.finished) return false;
     const cont = interp.step();
     viz.render(mem);
-    highlightLine(interp.currentLine);
     stepCounter.textContent = `Step ${interp.stepCount}`;
 
     if (interp.finished) {
@@ -1196,8 +1689,8 @@ function doStep() {
         runBtn.textContent = "\u25B6 Run";
         runBtn.classList.remove("running");
         running = false;
-        highlightLine(-1);
     }
+    refreshEditorDecorations();
     return cont;
 }
 
@@ -1234,12 +1727,14 @@ function doReset() {
     interp = null;
     mem.reset();
     viz.clear();
-    highlightLine(-1);
+    clearCrashOverlay();
     consoleOutput.textContent = "";
     runBtn.textContent = "\u25B6 Run";
     runBtn.classList.remove("running");
     stepCounter.textContent = "Step 0";
-    updateLineNumbers();
+    validateEditorCode();
+    updateSyntaxStatus();
+    refreshEditorDecorations();
 }
 
 runBtn.addEventListener("click", doRun);
@@ -1252,26 +1747,48 @@ stepBtn.addEventListener("click", () => {
 });
 
 resetBtn.addEventListener("click", doReset);
+crashCloseBtn.addEventListener("click", dismissCrashOverlay);
+themeToggleBtn.addEventListener("click", toggleTheme);
 
 codeInput.addEventListener("input", () => {
-    updateLineNumbers();
-    if (interp) doReset();
+    handleEditorContentChange();
 });
 
 codeInput.addEventListener("scroll", () => {
     lineNumbers.scrollTop = codeInput.scrollTop;
-    if (interp && interp.currentLine > 0) highlightLine(interp.currentLine);
+    refreshEditorDecorations();
 });
 
 codeInput.addEventListener("keydown", (e) => {
     if (e.key === "Tab") {
         e.preventDefault();
-        const start = codeInput.selectionStart;
-        const end = codeInput.selectionEnd;
-        codeInput.value = codeInput.value.substring(0, start) + "    " + codeInput.value.substring(end);
-        codeInput.selectionStart = codeInput.selectionEnd = start + 4;
-        updateLineNumbers();
+        if (e.shiftKey) outdentSelection();
+        else indentSelection();
+        return;
+    }
+
+    if (e.key === "Enter") {
+        e.preventDefault();
+        insertIndentedNewline();
+        return;
+    }
+
+    if (e.key === "}" && insertClosingBraceWithOutdent()) {
+        e.preventDefault();
     }
 });
 
-updateLineNumbers();
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !crashOverlay.hidden) {
+        e.preventDefault();
+        dismissCrashOverlay();
+    }
+});
+
+["click", "focus", "mouseup", "keyup", "select"].forEach((eventName) => {
+    codeInput.addEventListener(eventName, refreshEditorDecorations);
+});
+
+applyTheme(loadThemePreference());
+validateEditorCode();
+refreshEditorDecorations();

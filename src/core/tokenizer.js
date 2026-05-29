@@ -1,3 +1,5 @@
+"use strict";
+
 export const TOKENTYPES = Object.freeze({
   KEYWORD: "KW",
   IDENT: "ID",
@@ -125,4 +127,110 @@ export function tokenize(src) {
       }
     }
   }
+
+  function pushToken(type, value, tokenLine = line, tokenCol = col) {
+    tokens.push({
+      type,
+      value,
+      line: tokenLine,
+      col: tokenCol,
+    });
+  }
+
+  while (i < src.length) {
+    skipIgnored();
+
+    if (i >= src.length) {
+      break;
+    }
+
+    const startLine = line;
+    const startCol = col;
+    const currentChar = src[i];
+
+    if (currentChar === '"') {
+      // string literal
+      advance();
+      let string = "";
+
+      while (i < src.length && src[i] !== '"') {
+        if (src[i] === "\\") {
+          advance();
+          string += STRING_ESCAPE_SEQUENCE[src[i]] || src[i];
+        } else {
+          string += src[i];
+        }
+
+        advance();
+      }
+
+      if (i < src.length) {
+        advance();
+      }
+
+      pushToken(TOKENTYPES.STRING, string, startLine, startCol);
+    } else if (currentChar === "'") {
+      // char literal
+      advance();
+      let char = src[i];
+
+      if (char === "\\") {
+        advance();
+        char = CHAR_ESCAPE_SEQUENCE[src[i]] || src[i];
+      }
+
+      advance();
+
+      if (i < src.length && src[i] === "'") {
+        advance();
+      }
+
+      pushToken(TOKENTYPES.CHAR_LIT, char.charCodeAt(0), startLine, startCol);
+    } else if (/[a-zA-Z_]/.test(currentChar)) {
+      // keyword or identifier
+      let word = "";
+
+      while (i < src.length && /[a-zA-Z0-9_]/.test(src[i])) {
+        word += src[i];
+        advance();
+      }
+
+      pushToken(
+        KEYWORDS.has(word) ? TOKENTYPES.KEYWORD : TOKENTYPES.IDENT,
+        word,
+        startLine,
+        startCol,
+      );
+    } else if (/[0-9]/.test(currentChar)) {
+      // number
+      let number = "";
+
+      while (i < src.length && /[0-9.xXa-fA-F]/.test(src[i])) {
+        number += src[i];
+        advance();
+      }
+
+      pushToken(TOKENTYPES.NUMBER, Number(number), startLine, startCol);
+    } else if ("+-*/%=!<>&|^~".includes(currentChar)) {
+      // operator
+      let operator = currentChar;
+      advance();
+
+      if (i < src.length && OPERATIONS.has(operator + src[i])) {
+        operator += src[i];
+        advance();
+      }
+
+      pushToken(TOKENTYPES.OP, operator, startLine, startCol);
+    } else if ("(){}[];,.".includes(currentChar)) {
+      // punctuation
+      pushToken(TOKENTYPES.PUNC, currentChar, startLine, startCol);
+      advance();
+    } else {
+      advance();
+    }
+  }
+
+  pushToken(TOKENTYPES.EOF, "", line, col);
+  return tokens;
 }

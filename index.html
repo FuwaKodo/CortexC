@@ -41,8 +41,8 @@
             <div class="panel-header">Code</div>
             <div class="code-editor">
                 <div class="line-numbers" id="lineNumbers"></div>
-                <textarea id="codeInput" spellcheck="false">int globalCount = 10;
-
+                <textarea id="codeInput" spellcheck="false">
+int globalCount = 10;
 int add(int a, int b) {
     int result = a + b;
     return result;
@@ -96,7 +96,14 @@ int main() {
         <pre id="consoleOutput"></pre>
     </section>
 
-    <script src="cortexc.js"></script>
+    <script src="src/core/tokenizer.js"></script>
+    <script src="src/core/parser.js"></script>
+    <script src="src/memory/memory-model.js"></script>
+    <script src="src/core/interpreter.js"></script>
+    <script src="src/ui/visualizer.js"></script>
+    <script src="src/utils/editor.js"></script>
+    <script src="src/ui/controller.js"></script>
+    <script src="src/main.js"></script>
 </body>
 
 </html>

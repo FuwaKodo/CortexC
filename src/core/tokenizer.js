@@ -79,4 +79,50 @@ export function tokenize(src) {
 
     i += 1;
   }
+
+  function isWhiteSpace(char) {
+    return /\s/.test(char);
+  }
+
+  function isLineCommentStart() {
+    return src[i] === "/" && src[i + 1] === "/";
+  }
+
+  function isBlockCommentStart() {
+    return src[i] === "/" && src[i + 1] === "*";
+  }
+
+  function skipLineComment() {
+    while (i < src.length && src[i] !== "\n") {
+      advance();
+    }
+  }
+
+  function skipBlockComment() {
+    advance();
+    advance();
+
+    while (i < src.length - 1 && !(src[i] === "*" && src[i + 1] === "/")) {
+      advance();
+    }
+
+    if (i < src.length - 1) {
+      advance();
+      advance();
+    }
+  }
+
+  function skipIgnored() {
+    while (i < src.length) {
+      if (isWhiteSpace(src[i])) {
+        advance();
+      } else if (isLineCommentStart()) {
+        skipLineComment();
+      } else if (isBlockCommentStart()) {
+        skipBlockComment();
+      } else {
+        break;
+      }
+    }
+  }
 }

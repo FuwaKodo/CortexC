@@ -1,4 +1,4 @@
-export const TT = Object.freeze({
+export const TOKENTYPES = Object.freeze({
   KEYWORD: "KW",
   IDENT: "ID",
   NUMBER: "NUM",
@@ -32,6 +32,51 @@ export const KEYWORDS = new Set([
   "static",
 ]);
 
+export const OPERATIONS = new Set([
+  "==",
+  "!=",
+  "<=",
+  ">=",
+  "&&",
+  "||",
+  "++",
+  "--",
+  "+=",
+  "-=",
+  "*=",
+  "/=",
+  "->",
+]);
+
+const STRING_ESCAPE_SEQUENCE = Object.freeze({
+  n: "\n",
+  t: "\t",
+  "\\": "\\",
+  '"': '"',
+});
+
+const CHAR_ESCAPE_SEQUENCE = Object.freeze({
+  n: "\n",
+  t: "\t",
+  0: "\0",
+  "\\": "\\",
+  "'": "'",
+});
+
 export function tokenize(src) {
   const tokens = [];
+  let i = 0;
+  let line = 1;
+  let col = 1;
+
+  function advance() {
+    if (src[i] === "\n") {
+      line += 1;
+      col = 1;
+    } else {
+      col += 1;
+    }
+
+    i += 1;
+  }
 }

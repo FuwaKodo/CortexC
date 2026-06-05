@@ -1,4 +1,4 @@
-const TYPE_SIZES = {
+const TYPE_SIZES_BYTES = {
   int: 4,
   char: 1,
   float: 4,
@@ -7,6 +7,44 @@ const TYPE_SIZES = {
   long: 8,
   short: 2,
 };
+
+const POINTER_SIZE_BYTES = 8;
+const DEFAULT_TYPE_SIZE_BYTES = 4;
+
+/**
+ * A parsed C type object produced by Parser.parseType()
+ *
+ * Examples:
+ * int      -> { base: "int", pointer: 0 }
+ * int *    -> { base: "int", pointer: 1 }
+ * char **  -> { base: "char", pointer: 2 }
+ *
+ * @typedef {Object} CType
+ * @property {string} base - Base C type, including supported modifiers
+ * @property {number} pointer - Number of pointer stars after the base type
+*/
+
+/**
+ * Returns the number of bytes needed to store a value of this C type
+ *
+ * Pointer types are simulated as 8-byte addresses
+ * Non-pointer types use their cleaned base type name
+ * 
+ * @param {CType} type - Parsed C type object
+ * @returns {number} - Number of bytes used by this type
+*/
+function getTypeSize(type) {
+  if (type.pointer > 0) {
+    return POINTER_SIZE_BYTES;
+  } 
+
+  const baseType = getBaseTypeName(type.base);
+  return TYPE_SIZES_BYTES[baseType] || DEFAULT_TYPE_SIZE_BYTES;
+}
+
+function getBaseTypeName(typeBase) {
+  return type.base.replace(/unsigned |const |static /g, "").trim();
+}
 
 function sizeOf(type) {
   if (type.pointer > 0) return 8;

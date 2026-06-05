@@ -318,7 +318,7 @@ class Interpreter {
         return this.mem.deref(addr);
       }
       case "sizeof":
-        return sizeOf(node.type);
+        return getTypeSize(node.type);
       case "cast":
         return this.evalExpr(node.expr);
       case "malloc": {

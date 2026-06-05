@@ -70,17 +70,6 @@ function getDefaultValueForType(type) {
   return 0; 
 }
 
-function sizeOf(type) {
-  if (type.pointer > 0) return 8;
-  const base = type.base.replace(/unsigned |const |static /g, "").trim();
-  return TYPE_SIZES[base] || 4;
-}
-
-function defaultVal(type) {
-  if (type.pointer > 0) return 0;
-  return 0;
-}
-
 class MemoryModel {
   constructor() {
     this.stack = [];
@@ -101,7 +90,7 @@ class MemoryModel {
   }
 
   declareGlobal(name, type, value, arraySize, arrayInit) {
-    const size = arraySize ? arraySize * sizeOf(type) : sizeOf(type);
+    const size = arraySize ? arraySize * getTypeSize(type) : getTypeSize(type);
     const addr = this.nextGlobalAddr;
     this.nextGlobalAddr += size + ((4 - (size % 4)) % 4);
 
@@ -109,7 +98,7 @@ class MemoryModel {
       const values = [];
       for (let i = 0; i < arraySize; i++) {
         values.push(
-          arrayInit ? this.evalLiteral(arrayInit[i]) : defaultVal(type),
+          arrayInit ? this.evalLiteral(arrayInit[i]) : getDefaultValueForType(type),
         );
       }
       this.globals.set(name, {
@@ -124,7 +113,7 @@ class MemoryModel {
       this.globals.set(name, {
         type,
         addr,
-        value: value !== null ? value : defaultVal(type),
+        value: value !== null ? value : getDefaultValueForType(type),
         isArray: false,
       });
     }
@@ -157,14 +146,14 @@ class MemoryModel {
   declareLocal(name, type, value, arraySize, arrayInit) {
     const frame = this.topFrame();
     if (!frame) return;
-    const size = arraySize ? arraySize * sizeOf(type) : sizeOf(type);
+    const size = arraySize ? arraySize * getTypeSize(type) : getTypeSize(type);
     frame.currentAddr -= size + ((4 - (size % 4)) % 4);
     const addr = frame.currentAddr;
 
     if (arraySize) {
       const values = [];
       for (let i = 0; i < arraySize; i++) {
-        values.push(arrayInit ? arrayInit[i] : defaultVal(type));
+        values.push(arrayInit ? arrayInit[i] : getDefaultValueForType(type));
       }
       frame.vars.set(name, {
         type,
@@ -178,7 +167,7 @@ class MemoryModel {
       frame.vars.set(name, {
         type,
         addr,
-        value: value !== null && value !== undefined ? value : defaultVal(type),
+        value: value !== null && value !== undefined ? value : getDefaultValueForType(type),
         isArray: false,
       });
     }
@@ -285,7 +274,7 @@ class MemoryModel {
         if (!v.isArray && v.addr === addr)
           return { kind: "stack_scalar", frame, name, variable: v };
         if (v.isArray) {
-          const elemSize = sizeOf(v.elemType || v.type);
+          const elemSize = getTypeSize(v.elemType || v.type);
           const idx = Math.floor((addr - v.addr) / elemSize);
           if (addr >= v.addr && idx >= 0 && idx < v.size)
             return {
@@ -302,7 +291,7 @@ class MemoryModel {
       if (!v.isArray && v.addr === addr)
         return { kind: "global_scalar", name, variable: v };
       if (v.isArray) {
-        const elemSize = sizeOf(v.elemType || v.type);
+        const elemSize = getTypeSize(v.elemType || v.type);
         const idx = Math.floor((addr - v.addr) / elemSize);
         if (addr >= v.addr && idx >= 0 && idx < v.size)
           return { kind: "global_array", name, variable: v, index: idx };

@@ -93,6 +93,36 @@ function getDefaultValueForType(type) {
  * @property {number} currentAddr - Next available stack address
 */
 
+/**
+ * Represents one variable stored in simulated memory. 
+ * 
+ * Scalar example:
+ * {
+ *    type: { base: "int", pointer: 0 }, 
+ *    addr: 0x7fec, 
+ *    value: 5, 
+ *    isArray: false
+ * }
+ * 
+ * Array example:
+ * {
+ *    type: { base: "int", pointer: 0 }, 
+ *    addr: 0x7fe0, 
+ *    isArray: true, 
+ *    size: 4, 
+ *    values: [10, 20, 30 , 40], 
+ *    elemType: { base: "int", pointer: 0 }
+ * } 
+ * 
+ * @typedef {Object} MemoryVariable
+ * @property {CType} type - Parsed C type object
+ * @property {number} addr - Simulated memory address
+ * @property {boolean} isArray - Whether this variable is an array
+ * @property {*} [value] - Scalar value, used when isArray is false
+ * @property {number} [size] - Number of elements, used when isArray is true
+ * @property {Array<*>} [values] - Array element values, used when isArray is true
+ * @property {CType} [elemType] - Element type, used when isArray is true
+*/
 class MemoryModel {
   constructor() {
     this.stack = [];

@@ -70,6 +70,29 @@ function getDefaultValueForType(type) {
   return 0; 
 }
 
+
+/**
+ * Represents one simulated function call stack frame.
+ * 
+ * A new stack frame is created whenever the interpreter enters a function.
+ * Local variables and function parameters are stored inside the object.
+ * 
+ * Example: 
+ * {
+ *    name: "main", 
+ *    base: 0x7ff0,
+ *    vars: Map {
+ *      "x" : { type, addr, value, isArray }
+ *    }
+ * }
+ * 
+ * @typedef {Object} StackFrame
+ * @property {string} name - Function name for this stack frame
+ * @property {number} base  - Base address of this stack frame
+ * @property {Map<string, MemoryVariable>} vars - Variables declared in this frame
+ * @property {number} currentAddr - Next available stack address
+*/
+
 class MemoryModel {
   constructor() {
     this.stack = [];
@@ -139,13 +162,16 @@ class MemoryModel {
     return frame;
   }
 
-  topFrame() {
+  getCurrentStackFrame() {
     return this.stack[this.stack.length - 1];
   }
 
   declareLocal(name, type, value, arraySize, arrayInit) {
-    const frame = this.topFrame();
-    if (!frame) return;
+    const frame = this.getCurrentStackFrame();
+    if (!frame) {
+      return; 
+    }
+
     const size = arraySize ? arraySize * getTypeSize(type) : getTypeSize(type);
     frame.currentAddr -= size + ((4 - (size % 4)) % 4);
     const addr = frame.currentAddr;

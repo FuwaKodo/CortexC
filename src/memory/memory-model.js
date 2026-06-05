@@ -12,12 +12,12 @@ const POINTER_SIZE_BYTES = 8;
 const DEFAULT_TYPE_SIZE_BYTES = 4;
 
 /**
- * A parsed C type object produced by Parser.parseType()
+ * A parsed C type object produced by Parser.parseType().
  *
  * Examples:
- * int      -> { base: "int", pointer: 0 }
- * int *    -> { base: "int", pointer: 1 }
- * char **  -> { base: "char", pointer: 2 }
+ * int      : { base: "int", pointer: 0 }
+ * int *    : { base: "int", pointer: 1 }
+ * char **  : { base: "char", pointer: 2 }
  *
  * @typedef {Object} CType
  * @property {string} base - Base C type, including supported modifiers
@@ -25,10 +25,10 @@ const DEFAULT_TYPE_SIZE_BYTES = 4;
 */
 
 /**
- * Returns the number of bytes needed to store a value of this C type
+ * Returns the number of bytes needed to store a value of this C type.
  *
- * Pointer types are simulated as 8-byte addresses
- * Non-pointer types use their cleaned base type name
+ * Pointer types are simulated as 8-byte addresses.
+ * Non-pointer types use their cleaned base type name.
  * 
  * @param {CType} type - Parsed C type object
  * @returns {number} - Number of bytes used by this type
@@ -42,6 +42,17 @@ function getTypeSize(type) {
   return TYPE_SIZES_BYTES[baseType] || DEFAULT_TYPE_SIZE_BYTES;
 }
 
+/**
+ * Removes supported C modifiers from a base type string.
+ * 
+ * Examples:
+ * "unsigned int"   : "int"
+ * "const char"     : "char"
+ * "static int"     : "int"
+ * 
+ * @param {string} typeBase - Raw base type string from parser 
+ * @returns {string} - Base type name without supported modifiers
+ */
 function getBaseTypeName(typeBase) {
   return type.base.replace(/unsigned |const |static /g, "").trim();
 }

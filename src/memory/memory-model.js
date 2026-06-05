@@ -52,9 +52,22 @@ function getTypeSize(type) {
  * 
  * @param {string} typeBase - Raw base type string from parser 
  * @returns {string} - Base type name without supported modifiers
- */
+*/
 function getBaseTypeName(typeBase) {
-  return type.base.replace(/unsigned |const |static /g, "").trim();
+  return typeBase.replace(/unsigned |const |static /g, "").trim();
+}
+
+/**
+ * Returns the default simulated value for a C type. 
+ * 
+ * Default values for scalar values and pointer values are 0.
+ * For pointers, 0 represents NULL.
+ * 
+ * @param {CType} type - Parsed C type object
+ * @returns {number} - Default value for this type
+*/
+function getDefaultValueForType(type) {
+  return 0; 
 }
 
 function sizeOf(type) {

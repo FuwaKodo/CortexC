@@ -1,3 +1,3 @@
 const memoryModel = new MemoryModel();
-const visualizer = new Visualizer();
+const memoryVisualizer = new Visualizer();
 initController(memoryModel, visualizer);

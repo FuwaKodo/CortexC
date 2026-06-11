@@ -259,7 +259,7 @@ class MemoryModel {
    * @param {number | null | undefined} arraySize - Number of array elements, if this variable is an array
    * @param {Array<*> | null | undefined} arrayInit - Initial array values, if provided 
    * @returns {number | undefined} Simulated address of the variable, or undefined if no stack frame exists
-   */
+  */
   declareLocal(name, type, value, arraySize, arrayInit) {
     const frame = this.getCurrentStackFrame();
     if (!frame) {
@@ -294,6 +294,16 @@ class MemoryModel {
     return addr;
   }
 
+  /**
+   * Updates the value of an existing scalar variable. 
+   * 
+   * Searching from the newest stack frame to the oldest stack frame, 
+   * then checks global variables. 
+   *  
+   * @param {string} name - Variable name 
+   * @param {*} value - New value to store
+   * @returns {boolean} True if the variable was found and updated
+  */
   setLocal(name, value) {
     for (let i = this.stack.length - 1; i >= 0; i--) {
       if (this.stack[i].vars.has(name)) {
@@ -308,6 +318,15 @@ class MemoryModel {
     return false;
   }
 
+  /**
+   * Finds a variable by name.
+   * 
+   * Searching from the newest stack frame to the oldest stack frame, 
+   * then checks global variables. 
+   * 
+   * @param {string} name - Variable name 
+   * @returns {MemoryVariable | null} The variable object, or null if not found
+  */
   getVar(name) {
     for (let i = this.stack.length - 1; i >= 0; i--) {
       if (this.stack[i].vars.has(name)) return this.stack[i].vars.get(name);
@@ -316,11 +335,25 @@ class MemoryModel {
     return null;
   }
 
+  /**
+   * Returns the simulated memory address of a variable. 
+   * 
+   * @param {string} name - Variable name 
+   * @returns {number} Variable address, or 0 if the variable does not exist
+  */
   getVarAddr(name) {
     const v = this.getVar(name);
     return v ? v.addr : 0;
   }
 
+  /**
+   * Updates one element in an array variable. 
+   * 
+   * @param {string} name - Array variable name 
+   * @param {number} index - Array index to update
+   * @param {*} value - New element value
+   * @returns {booelan} True if the array element was updated 
+  */
   setArrayElem(name, index, value) {
     const v = this.getVar(name);
     if (v && v.isArray && index >= 0 && index < v.size) {
@@ -330,12 +363,28 @@ class MemoryModel {
     return false;
   }
 
+  /**
+   * Reads on element from an array variable.
+   * 
+   * @param {string} name - Array variable name 
+   * @param {number} index - Array index to read 
+   * @returns {*} Array element value, or 0 if invalid
+  */
   getArrayElem(name, index) {
     const v = this.getVar(name);
     if (v && v.isArray && index >= 0 && index < v.size) return v.values[index];
     return 0;
   }
 
+  /**
+   * Allocates a new heap block. 
+   * 
+   * Simulates the behaviour of malloc().
+   * 
+   * @param {number} size - Requested allocation size in bytes
+   * @param {CType | undefined} requestedType - Optional type for this heap block
+   * @returns {number} Starting address of the allocated heap block
+  */
   allocHeap(size, requestedType) {
     const addr = this.nextHeapAddr;
     const elemCount = Math.max(1, Math.ceil(size / 4));
@@ -350,6 +399,12 @@ class MemoryModel {
     return addr;
   }
 
+  /**
+   * Marks a heap block as freed. 
+   * 
+   * @param {number} addr - Starting address of the heap block to free 
+   * @returns {boolean} True if the block existed and was not already freed
+  */
   freeHeap(addr) {
     if (this.heap.has(addr) && !this.heap.get(addr).freed) {
       this.heap.get(addr).freed = true;
@@ -358,6 +413,13 @@ class MemoryModel {
     return false;
   }
 
+  /**
+   * Writes a value to a heap address. 
+   * 
+   * @param {number} addr - Heap address to write to
+   * @param {*} value - Value to store 
+   * @returns {boolean} True if the address was inside a live heap block
+  */
   setHeapValue(addr, value) {
     for (const [base, block] of this.heap) {
       if (!block.freed && addr >= base && addr < base + block.size) {
@@ -371,6 +433,12 @@ class MemoryModel {
     return false;
   }
 
+  /**
+   * Reads a value from a heap address.
+   *
+   * @param {number} addr - Heap address to read from
+   * @returns {*} Stored heap value, or 0 if the address is invalid
+  */
   getHeapValue(addr) {
     for (const [base, block] of this.heap) {
       if (addr >= base && addr < base + block.size) {
@@ -381,6 +449,15 @@ class MemoryModel {
     return 0;
   }
 
+  /**
+   * Resolves a raw memory address to the simulated memory object it belongs to. 
+   * 
+   * Checks heap blocks first, then stack variables, then global variables.
+   * Used for pointer dereferencing logic. 
+   * 
+   * @param {number} addr - Simulated memory address
+   * @returns {ResolvedAddress | null} Description of the resolved address, or null if invalid
+  */
   resolveAddress(addr) {
     for (const [base, block] of this.heap) {
       if (addr >= base && addr < base + block.size) {

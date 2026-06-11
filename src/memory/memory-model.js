@@ -497,6 +497,12 @@ class MemoryModel {
     return null;
   }
 
+  /**
+   * Reads the value stored at a simulated memory address.
+   * 
+   * @param {number} addr - Address to read from 
+   * @returns {*} Value at that address, or 0 if the address cannot be resolved
+  */
   deref(addr) {
     const resolved = this.resolveAddress(addr);
     if (!resolved) return 0;
@@ -506,6 +512,13 @@ class MemoryModel {
     return resolved.variable.value;
   }
 
+  /**
+   * Writes a value to a simulated memory address.
+   * 
+   * @param {number} addr - Address to read from 
+   * @param {*} value - Value to store 
+   * @returns {boolean} True if the write succeeded
+  */
   setDeref(addr, value) {
     const resolved = this.resolveAddress(addr);
     if (!resolved) return false;

@@ -31,7 +31,7 @@ const DEFAULT_TYPE_SIZE_BYTES = 4;
  * Non-pointer types use their cleaned base type name.
  * 
  * @param {CType} type - Parsed C type object
- * @returns {number} - Number of bytes used by this type
+ * @returns {number} Number of bytes used by this type
 */
 function getTypeSize(type) {
   if (type.pointer > 0) {
@@ -51,7 +51,7 @@ function getTypeSize(type) {
  * "static int"     : "int"
  * 
  * @param {string} typeBase - Raw base type string from parser 
- * @returns {string} - Base type name without supported modifiers
+ * @returns {string} Base type name without supported modifiers
 */
 function getBaseTypeName(typeBase) {
   return typeBase.replace(/unsigned |const |static /g, "").trim();
@@ -64,7 +64,7 @@ function getBaseTypeName(typeBase) {
  * For pointers, 0 represents NULL.
  * 
  * @param {CType} type - Parsed C type object
- * @returns {number} - Default value for this type
+ * @returns {number} Default value for this type
 */
 function getDefaultValueForType(type) {
   return 0; 
@@ -123,6 +123,34 @@ function getDefaultValueForType(type) {
  * @property {Array<*>} [values] - Array element values, used when isArray is true
  * @property {CType} [elemType] - Element type, used when isArray is true
 */
+
+/**
+ * Represents one allocated heap block from malloc().
+ *
+ * @typedef {Object} HeapBlock
+ * @property {number} size - Requested allocation size in bytes
+ * @property {number} elemCount - Number of simulated 4-byte slots in this block
+ * @property {Array<*>} values - Stored values inside the heap block
+ * @property {CType} type - Type associated with the allocated block
+ * @property {boolean} freed - Whether this block has been freed
+*/
+
+/**
+ * Represents the result of resolving a memory address.
+ *
+ * The resolved object tells us which memory region owns the address:
+ * heap, stack scalar, stack array, global scalar, or global array.
+ *
+ * @typedef {Object} ResolvedAddress
+ * @property {string} kind - Memory location kind
+ * @property {number} [base] - Base heap address, used for heap blocks
+ * @property {HeapBlock} [block] - Heap block, used when kind is "heap"
+ * @property {StackFrame} [frame] - Stack frame, used for stack variables
+ * @property {string} [name] - Variable name, used for stack/global variables
+ * @property {MemoryVariable} [variable] - Resolved variable object
+ * @property {number} [index] - Array/heap slot index
+*/
+
 class MemoryModel {
   constructor() {
     this.stack = [];
@@ -180,22 +208,58 @@ class MemoryModel {
     return 0;
   }
 
+  /**
+   * Creates a new stack frame for a function call. 
+   * 
+   * The frame starts at nextStackBase. 
+   * Local variables are allocated by moving currentAddr downwards. 
+   *  
+   * @param {string} name - Function name for the new stack frame
+   * @returns {void}
+  */
   pushFrame(name) {
     const base = this.nextStackBase;
-    this.stack.push({ name, base, vars: new Map(), currentAddr: base });
+    this.stack.push({ 
+      name: name, 
+      base: base, 
+      vars: new Map(), 
+      currentAddr: base, 
+    });
+
     this.nextStackBase -= 0x100;
   }
 
+  /**
+   * Removes the current function's stack frame. 
+   * 
+   * @returns {StackFrame | undefined} The removed stack frame, or undefined if stack was empty
+  */
   popFrame() {
     const frame = this.stack.pop();
     if (frame) this.nextStackBase += 0x100;
     return frame;
   }
 
+  /**
+   * Returns the stack frame for the currently executing function.
+   * Local variables should be declared in this frame. 
+   * 
+   * @returns {StackFrame | undefined} Current stack frame, or undefined if no function is active
+  */
   getCurrentStackFrame() {
     return this.stack[this.stack.length - 1];
   }
 
+  /**
+   * Declare a local variable or local array in the current stack frame. 
+   * 
+   * @param {string} name - Variable name
+   * @param {CType} type - Parsed C type object
+   * @param {*} value - Initial scalar value, or null/undefined for default value
+   * @param {number | null | undefined} arraySize - Number of array elements, if this variable is an array
+   * @param {Array<*> | null | undefined} arrayInit - Initial array values, if provided 
+   * @returns {number | undefined} Simulated address of the variable, or undefined if no stack frame exists
+   */
   declareLocal(name, type, value, arraySize, arrayInit) {
     const frame = this.getCurrentStackFrame();
     if (!frame) {

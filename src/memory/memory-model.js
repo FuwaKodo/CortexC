@@ -152,15 +152,39 @@ function getDefaultValueForType(type) {
 */
 
 class MemoryModel {
+  /**
+   * Creates a new simulated memory model. 
+   * 
+   * Model tracks tree memory regions:
+   * - stack: function call frames and local variables
+   * - heap: malloc/free allocations
+   * - globals: global and static variables
+   * 
+   * Address ranges are simulated:
+   * - globals: start from 0x1000 and grow toward larger addresses 
+   * - heap: starts from 0x4000 and grows towards larger addresses
+   * - stack: starts from 0x7ff0 and grows towards smaller addresses
+  */
   constructor() {
+    /** @type {StackFrame[]} */
     this.stack = [];
+
+    /** @type {Map<Number, HeapBlock>} */
     this.heap = new Map();
+
+    /** @type  {Map<string, MemoryVariable>} */
     this.globals = new Map();
+
     this.nextHeapAddr = 0x4000;
     this.nextGlobalAddr = 0x1000;
     this.nextStackBase = 0x7ff0;
   }
 
+  /**
+   * Clears all simulated memory and resets address counters. 
+   * 
+   * @returns {void} 
+  */
   reset() {
     this.stack = [];
     this.heap.clear();
@@ -170,6 +194,19 @@ class MemoryModel {
     this.nextStackBase = 0x7ff0;
   }
 
+  /**
+   * Declares a global or static variable in simulated global memory. 
+   * 
+   * If arraySize is this provided, this declares an array. Otherwise, declares
+   * a scalar value with one value. 
+   * 
+   * @param {string} name -  Variable name 
+   * @param {CType} type - Parsed C type object 
+   * @param {*} value  - Initial scalar value, or null/undefined for default value
+   * @param {number | null | undefined} arraySize - Number of array elements, if this is an array 
+   * @param {Array<*> | null | undefined} arrayInit - Initial array values, if provided 
+   * @returns  {number} Simulated global memory address of the declared variable
+  */
   declareGlobal(name, type, value, arraySize, arrayInit) {
     const size = arraySize ? arraySize * getTypeSize(type) : getTypeSize(type);
     const addr = this.nextGlobalAddr;
@@ -201,6 +238,13 @@ class MemoryModel {
     return addr;
   }
 
+  /**
+   * Converts a simple literal AST node into its runtime value. 
+   * Extracts the actual JavaScript value from simple literals. 
+   * 
+   * @param {*} node - Literal value or parsed expression node
+   * @returns {number} The numeric value or 0 if the input is empty/unsupported
+  */
   evalLiteral(node) {
     if (!node) return 0;
     if (typeof node === "number") return node;

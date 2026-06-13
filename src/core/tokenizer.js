@@ -63,12 +63,50 @@ const CHAR_ESCAPE_SEQUENCE = Object.freeze({
   "'": "'",
 });
 
+/**
+ * Represents one token produced by the tokenizer.
+ *
+ * Examples:
+ *  - int : { type: "KW", value: "int", line: 1, col: 1 }
+ *  - x   : { type: "ID", value: "x", line: 1, col: 5 }
+ *  - 123 : { type: "NUM", value: 123, line: 1, col: 9 }
+ *  - ;   : { type: "PN", value: ";", line: 1, col: 12 }
+ *
+ * @typedef {Object} Token
+ * @property {string} type - Token type from TOKENTYPES
+ * @property {*} value - Token value, such as "int", "x", 123, or ";"
+ * @property {number} line - Source line number where the token starts
+ * @property {number} col - Source column number where the token starts
+*/
+
+/**
+ * Converts raw C source code into a list of tokens. 
+ * 
+ * The tokenizer recognizes:
+ *  - keywords: int, return, malloc 
+ *  - identifiers: 'x', 'ptr', 'main'
+ *  - numbers: 123
+ *  - strings: 'hello'
+ *  - char literals: 'A', 'a'
+ *  - operators: '+', 
+ *  - punctuation: ';', '(', ')', '{', '}'
+ * 
+ * Whitespace and comments are skipped.
+ * 
+ * @param {string} src - Raw source code from the editor 
+ * @returns {Token[]} Tokens for the parser, ending with an EOF token
+*/
 function tokenize(src) {
   const tokens = [];
   let i = 0;
   let line = 1;
   let col = 1;
 
+  /**
+   * Moves to the next source character. 
+   *  
+   * @returns {void}
+   */
   function advance() {
     if (src[i] === "\n") {
       line += 1;

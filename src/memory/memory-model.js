@@ -155,7 +155,7 @@ class MemoryModel {
   /**
    * Creates a new simulated memory model. 
    * 
-   * Model tracks tree memory regions:
+   * Model tracks three memory regions:
    * - stack: function call frames and local variables
    * - heap: malloc/free allocations
    * - globals: global and static variables
@@ -169,7 +169,7 @@ class MemoryModel {
     /** @type {StackFrame[]} */
     this.stack = [];
 
-    /** @type {Map<Number, HeapBlock>} */
+    /** @type {Map<number, HeapBlock>} */
     this.heap = new Map();
 
     /** @type  {Map<string, MemoryVariable>} */
@@ -197,7 +197,7 @@ class MemoryModel {
   /**
    * Declares a global or static variable in simulated global memory. 
    * 
-   * If arraySize is this provided, this declares an array. Otherwise, declares
+   * If arraySize is provided, this declares an array. Otherwise, declares
    * a scalar value with one value. 
    * 
    * @param {string} name -  Variable name 
@@ -239,7 +239,7 @@ class MemoryModel {
   }
 
   /**
-   * Converts a simple literal AST node into its runtime value. 
+   * Converts a raw number or parsed number node into a value stored in memory.
    * Extracts the actual JavaScript value from simple literals. 
    * 
    * @param {*} node - Literal value or parsed expression node
@@ -396,7 +396,7 @@ class MemoryModel {
    * @param {string} name - Array variable name 
    * @param {number} index - Array index to update
    * @param {*} value - New element value
-   * @returns {booelan} True if the array element was updated 
+   * @returns {boolean} True if the array element was updated 
   */
   setArrayElem(name, index, value) {
     const v = this.getVar(name);
@@ -408,7 +408,7 @@ class MemoryModel {
   }
 
   /**
-   * Reads on element from an array variable.
+   * Reads one element from an array variable.
    * 
    * @param {string} name - Array variable name 
    * @param {number} index - Array index to read 
@@ -559,7 +559,7 @@ class MemoryModel {
   /**
    * Writes a value to a simulated memory address.
    * 
-   * @param {number} addr - Address to read from 
+   * @param {number} addr - Address to write to 
    * @param {*} value - Value to store 
    * @returns {boolean} True if the write succeeded
   */

@@ -79,7 +79,7 @@ const CHAR_ESCAPE_SEQUENCE = Object.freeze({
  * @property {*} value - Token value, such as "int", "x", 123, or ";"
  * @property {number} line - Source line number where the token starts
  * @property {number} col - Source column number where the token starts
-*/
+ */
 
 /**
  * Converts raw C source code into a list of tokens.
@@ -97,7 +97,7 @@ const CHAR_ESCAPE_SEQUENCE = Object.freeze({
  *
  * @param {string} src - Raw source code from the editor
  * @returns {Token[]} Tokens for the parser, ending with an EOF token
-*/
+ */
 function tokenize(src) {
   const tokens = [];
   let i = 0;
@@ -106,10 +106,10 @@ function tokenize(src) {
 
   /**
    * Moves to the next source character while updating current line
-   * and column position. 
+   * and column position.
    *
    * @returns {void}
-  */
+   */
   function advance() {
     if (src[i] === "\n") {
       line += 1;

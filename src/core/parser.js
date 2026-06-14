@@ -12,8 +12,7 @@ class Parser {
   }
   eat(type, value) {
     const t = this.at();
-    if (type && t.type !== type)
-      this.err(`Expected ${type} but got ${t.type} (${t.value})`);
+    if (type && t.type !== type) this.err(`Expected ${type} but got ${t.type} (${t.value})`);
     if (value !== undefined && t.value !== value)
       this.err(`Expected '${value}' but got '${t.value}'`);
     this.pos++;
@@ -58,15 +57,7 @@ class Parser {
 
   parseType() {
     let base = "";
-    while (
-      this.matchAny(TOKENTYPES.KEYWORD, [
-        "const",
-        "static",
-        "unsigned",
-        "long",
-        "short",
-      ])
-    ) {
+    while (this.matchAny(TOKENTYPES.KEYWORD, ["const", "static", "unsigned", "long", "short"])) {
       base += this.eat().value + " ";
     }
     base += this.eat(TOKENTYPES.KEYWORD).value;
@@ -83,8 +74,7 @@ class Parser {
     const type = this.parseType();
     const name = this.eat(TOKENTYPES.IDENT).value;
 
-    if (this.match(TOKENTYPES.PUNC, "("))
-      return this.parseFuncDef(type, name, startLine);
+    if (this.match(TOKENTYPES.PUNC, "(")) return this.parseFuncDef(type, name, startLine);
 
     let value = null,
       arraySize = null,
@@ -158,8 +148,7 @@ class Parser {
       return { kind: "return", value, line: startLine };
     }
 
-    if (this.match(TOKENTYPES.KEYWORD, "printf"))
-      return this.parsePrintf(startLine);
+    if (this.match(TOKENTYPES.KEYWORD, "printf")) return this.parsePrintf(startLine);
 
     if (this.match(TOKENTYPES.KEYWORD, "free")) {
       this.eat();
@@ -378,12 +367,9 @@ class Parser {
   }
 
   parsePrimary() {
-    if (this.match(TOKENTYPES.NUMBER))
-      return { kind: "num", value: this.eat().value };
-    if (this.match(TOKENTYPES.CHAR_LIT))
-      return { kind: "num", value: this.eat().value };
-    if (this.match(TOKENTYPES.STRING))
-      return { kind: "str", value: this.eat().value };
+    if (this.match(TOKENTYPES.NUMBER)) return { kind: "num", value: this.eat().value };
+    if (this.match(TOKENTYPES.CHAR_LIT)) return { kind: "num", value: this.eat().value };
+    if (this.match(TOKENTYPES.STRING)) return { kind: "str", value: this.eat().value };
     if (this.match(TOKENTYPES.KEYWORD, "NULL")) {
       this.eat();
       return { kind: "num", value: 0 };
@@ -439,8 +425,6 @@ class Parser {
       return { kind: "var", name };
     }
 
-    this.err(
-      `Unexpected token in expression: ${this.at().type} '${this.at().value}'`,
-    );
+    this.err(`Unexpected token in expression: ${this.at().type} '${this.at().value}'`);
   }
 }

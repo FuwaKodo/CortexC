@@ -54,8 +54,7 @@ class Interpreter {
   }
 
   start() {
-    if (!this.program.functions["main"])
-      this.crash("No main() function found.");
+    if (!this.program.functions["main"]) this.crash("No main() function found.");
     this.callFunction("main", []);
   }
 
@@ -116,8 +115,7 @@ class Interpreter {
 
     if (this.callStack.length > 0) {
       const top = this.callStack[this.callStack.length - 1];
-      if (top.pc >= top.func.body.length && top.func.name === "main")
-        this.doReturn(0);
+      if (top.pc >= top.func.body.length && top.func.name === "main") this.doReturn(0);
     }
 
     return !this.finished;
@@ -140,16 +138,8 @@ class Interpreter {
     switch (stmt.kind) {
       case "local_decl": {
         if (stmt.isArray) {
-          const initVals = stmt.arrayInit
-            ? stmt.arrayInit.map((e) => this.evalExpr(e))
-            : null;
-          this.mem.declareLocal(
-            stmt.name,
-            stmt.type,
-            null,
-            stmt.arraySize,
-            initVals,
-          );
+          const initVals = stmt.arrayInit ? stmt.arrayInit.map((e) => this.evalExpr(e)) : null;
+          this.mem.declareLocal(stmt.name, stmt.type, null, stmt.arraySize, initVals);
         } else {
           const val = stmt.value !== null ? this.evalExpr(stmt.value) : null;
           this.mem.declareLocal(stmt.name, stmt.type, val);
@@ -173,27 +163,20 @@ class Interpreter {
           "/=": (a, b) => Math.trunc(a / b),
         };
         if (stmt.op === "/=" && rhs === 0)
-          this.crash(
-            `Division by zero while updating '${stmt.name}'.`,
-            stmt.line,
-          );
+          this.crash(`Division by zero while updating '${stmt.name}'.`, stmt.line);
         this.mem.setLocal(stmt.name, ops[stmt.op](v.value, rhs));
         break;
       }
       case "unary_stmt": {
         const v = this.mem.getVar(stmt.name);
         if (!v) this.crash(`Undefined variable '${stmt.name}'.`, stmt.line);
-        this.mem.setLocal(
-          stmt.name,
-          stmt.op === "++" ? v.value + 1 : v.value - 1,
-        );
+        this.mem.setLocal(stmt.name, stmt.op === "++" ? v.value + 1 : v.value - 1);
         break;
       }
       case "deref_assign": {
         const ptr = this.mem.getVar(stmt.target);
         if (!ptr) this.crash(`Undefined variable '${stmt.target}'.`, stmt.line);
-        if (ptr.value === 0)
-          this.crash(`Null pointer write through '${stmt.target}'.`, stmt.line);
+        if (ptr.value === 0) this.crash(`Null pointer write through '${stmt.target}'.`, stmt.line);
         const target = this.mem.resolveAddress(ptr.value);
         if (!target)
           this.crash(
@@ -201,10 +184,7 @@ class Interpreter {
             stmt.line,
           );
         if (target.kind === "heap" && target.block.freed)
-          this.crash(
-            `Write after free at 0x${ptr.value.toString(16).toUpperCase()}.`,
-            stmt.line,
-          );
+          this.crash(`Write after free at 0x${ptr.value.toString(16).toUpperCase()}.`, stmt.line);
         const val = this.evalExpr(stmt.value);
         if (!this.mem.setDeref(ptr.value, val))
           this.crash(
@@ -216,14 +196,10 @@ class Interpreter {
       case "array_assign": {
         const arrayVar = this.mem.getVar(stmt.name);
         if (!arrayVar) this.crash(`Undefined array '${stmt.name}'.`, stmt.line);
-        if (!arrayVar.isArray)
-          this.crash(`'${stmt.name}' is not an array.`, stmt.line);
+        if (!arrayVar.isArray) this.crash(`'${stmt.name}' is not an array.`, stmt.line);
         const idx = this.evalExpr(stmt.index);
         if (idx < 0 || idx >= arrayVar.size)
-          this.crash(
-            `Array index ${idx} is out of bounds for '${stmt.name}'.`,
-            stmt.line,
-          );
+          this.crash(`Array index ${idx} is out of bounds for '${stmt.name}'.`, stmt.line);
         this.mem.setArrayElem(stmt.name, idx, this.evalExpr(stmt.value));
         break;
       }
@@ -243,10 +219,7 @@ class Interpreter {
         const addr = this.evalExpr(stmt.arg);
         if (addr === 0) break;
         if (!this.mem.freeHeap(addr))
-          this.crash(
-            `Invalid free() address 0x${addr.toString(16).toUpperCase()}.`,
-            stmt.line,
-          );
+          this.crash(`Invalid free() address 0x${addr.toString(16).toUpperCase()}.`, stmt.line);
         break;
       }
       case "return": {
@@ -277,8 +250,7 @@ class Interpreter {
       case "binop": {
         const l = this.evalExpr(node.left),
           r = this.evalExpr(node.right);
-        if ((node.op === "/" || node.op === "%") && r === 0)
-          this.crash("Division by zero.");
+        if ((node.op === "/" || node.op === "%") && r === 0) this.crash("Division by zero.");
         const ops = {
           "+": (a, b) => a + b,
           "-": (a, b) => a - b,
@@ -310,9 +282,7 @@ class Interpreter {
         if (addr === 0) this.crash("Null pointer dereference.");
         const target = this.mem.resolveAddress(addr);
         if (!target)
-          this.crash(
-            `Invalid pointer dereference at 0x${addr.toString(16).toUpperCase()}.`,
-          );
+          this.crash(`Invalid pointer dereference at 0x${addr.toString(16).toUpperCase()}.`);
         if (target.kind === "heap" && target.block.freed)
           this.crash(`Use after free at 0x${addr.toString(16).toUpperCase()}.`);
         return this.mem.deref(addr);
@@ -326,8 +296,7 @@ class Interpreter {
         return this.mem.allocHeap(size);
       }
       case "call": {
-        if (this.callIndex < this.callResults.length)
-          return this.callResults[this.callIndex++];
+        if (this.callIndex < this.callResults.length) return this.callResults[this.callIndex++];
         const func = this.program.functions[node.name];
         if (!func) this.crash(`Undefined function '${node.name}'.`);
         const args = node.args.map((a) => this.evalExpr(a));

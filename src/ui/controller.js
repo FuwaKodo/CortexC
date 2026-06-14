@@ -48,9 +48,7 @@ function initController(mem, viz) {
   function showCrashOverlay(reason, line = null) {
     runtimeCrash = { reason, line };
     crashReason.textContent = reason;
-    crashLine.textContent = line
-      ? `Line ${line}`
-      : "Execution stopped immediately.";
+    crashLine.textContent = line ? `Line ${line}` : "Execution stopped immediately.";
     crashOverlay.hidden = false;
     updateSyntaxStatus();
     refreshEditorDecorations();
@@ -76,10 +74,7 @@ function initController(mem, viz) {
     runBtn.textContent = "\u25B6 Run";
     runBtn.classList.remove("running");
     appendConsole("\n=== PROGRAM CRASHED ===\n", "console-error");
-    appendConsole(
-      (line ? `Line ${line}: ` : "") + reason + "\n",
-      "console-error",
-    );
+    appendConsole((line ? `Line ${line}: ` : "") + reason + "\n", "console-error");
     showCrashOverlay(reason, line);
   }
 
@@ -142,8 +137,7 @@ function initController(mem, viz) {
   }
 
   function getCaretLine() {
-    return codeInput.value.slice(0, codeInput.selectionStart).split("\n")
-      .length;
+    return codeInput.value.slice(0, codeInput.selectionStart).split("\n").length;
   }
 
   function getActiveEditorLine() {
@@ -168,9 +162,7 @@ function initController(mem, viz) {
 
   function updateLineNumbers(
     activeLine = getActiveEditorLine(),
-    errorLine = editorDiagnostic.severity === "error"
-      ? editorDiagnostic.line
-      : null,
+    errorLine = editorDiagnostic.severity === "error" ? editorDiagnostic.line : null,
   ) {
     const lines = codeInput.value.split("\n");
     lineNumbers.innerHTML = lines
@@ -187,24 +179,15 @@ function initController(mem, viz) {
   function refreshEditorDecorations() {
     const activeLine = getActiveEditorLine();
     const errorLine =
-      runtimeCrash?.line ??
-      (editorDiagnostic.severity === "error" ? editorDiagnostic.line : null);
+      runtimeCrash?.line ?? (editorDiagnostic.severity === "error" ? editorDiagnostic.line : null);
     if (activeLine && errorLine && activeLine === errorLine) {
       if (errorHighlightEl) {
         errorHighlightEl.remove();
         errorHighlightEl = null;
       }
-      highlightEl = setLineOverlay(
-        highlightEl,
-        activeLine,
-        "line-highlight line-highlight-error",
-      );
+      highlightEl = setLineOverlay(highlightEl, activeLine, "line-highlight line-highlight-error");
     } else {
-      errorHighlightEl = setLineOverlay(
-        errorHighlightEl,
-        errorLine,
-        "diagnostic-line-highlight",
-      );
+      errorHighlightEl = setLineOverlay(errorHighlightEl, errorLine, "diagnostic-line-highlight");
       highlightEl = setLineOverlay(highlightEl, activeLine, "line-highlight");
     }
     updateLineNumbers(activeLine, errorLine);
@@ -224,10 +207,7 @@ function initController(mem, viz) {
     const t = theme === "light" ? "light" : "dark";
     document.body.dataset.theme = t;
     themeToggleBtn.textContent = t === "light" ? "Dark Mode" : "White Mode";
-    themeToggleBtn.setAttribute(
-      "aria-pressed",
-      t === "light" ? "true" : "false",
-    );
+    themeToggleBtn.setAttribute("aria-pressed", t === "light" ? "true" : "false");
     updateSyntaxStatus();
     refreshEditorDecorations();
   }

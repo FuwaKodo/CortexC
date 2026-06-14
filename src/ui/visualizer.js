@@ -39,8 +39,7 @@ class Visualizer {
     }
     for (const [addr, block] of mem.heap)
       s.heap.push({ addr, freed: block.freed, vals: [...block.values] });
-    for (const [k, v] of mem.globals)
-      s.globals.push({ name: k, val: JSON.stringify(v) });
+    for (const [k, v] of mem.globals) s.globals.push({ name: k, val: JSON.stringify(v) });
     return s;
   }
 
@@ -83,8 +82,7 @@ class Visualizer {
 
   renderStack(mem) {
     if (mem.stack.length === 0) {
-      this.stackEl.innerHTML =
-        '<div class="empty-state">Run code to see stack</div>';
+      this.stackEl.innerHTML = '<div class="empty-state">Run code to see stack</div>';
       return;
     }
 
@@ -127,11 +125,8 @@ class Visualizer {
           html += `</div>`;
         } else {
           const ptrClass = this.isPointer(v.type) ? "pointer-val" : "";
-          const nullClass =
-            this.isPointer(v.type) && v.value === 0 ? "null-val" : "";
-          const typeStr =
-            v.type.base +
-            (v.type.pointer > 0 ? "*".repeat(v.type.pointer) : "");
+          const nullClass = this.isPointer(v.type) && v.value === 0 ? "null-val" : "";
+          const typeStr = v.type.base + (v.type.pointer > 0 ? "*".repeat(v.type.pointer) : "");
           const allocation =
             this.isPointer(v.type) && mem.heap.has(v.value)
               ? this.allocationMeta(v.value, mem.heap.get(v.value).freed)
@@ -139,13 +134,10 @@ class Visualizer {
           const cellClasses = ["mem-cell"];
           if (isNew) cellClasses.push("new-cell");
           if (allocation) cellClasses.push("allocation-linked");
-          if (allocation && allocation.freed)
-            cellClasses.push("allocation-freed");
+          if (allocation && allocation.freed) cellClasses.push("allocation-freed");
 
           html += `<div class="${cellClasses.join(" ")}" data-addr="${v.addr}"${this.allocationStyleAttr(allocation)}>`;
-          html += this.renderMemName(
-            `<span class="mem-type">${typeStr}</span> ${name}`,
-          );
+          html += this.renderMemName(`<span class="mem-type">${typeStr}</span> ${name}`);
           if (this.isPointer(v.type)) {
             html += this.renderPointerValue(
               name,
@@ -167,8 +159,7 @@ class Visualizer {
 
   renderHeap(mem) {
     if (mem.heap.size === 0) {
-      this.heapEl.innerHTML =
-        '<div class="empty-state">No heap allocations</div>';
+      this.heapEl.innerHTML = '<div class="empty-state">No heap allocations</div>';
       return;
     }
 
@@ -202,8 +193,7 @@ class Visualizer {
 
   renderGlobals(mem) {
     if (mem.globals.size === 0) {
-      this.globalEl.innerHTML =
-        '<div class="empty-state">No global variables</div>';
+      this.globalEl.innerHTML = '<div class="empty-state">No global variables</div>';
       return;
     }
 
@@ -219,8 +209,7 @@ class Visualizer {
         }
         html += `</div>`;
       } else {
-        const typeStr =
-          v.type.base + (v.type.pointer > 0 ? "*".repeat(v.type.pointer) : "");
+        const typeStr = v.type.base + (v.type.pointer > 0 ? "*".repeat(v.type.pointer) : "");
         const ptrClass = this.isPointer(v.type) ? "pointer-val" : "";
         const allocation =
           this.isPointer(v.type) && mem.heap.has(v.value)
@@ -228,21 +217,12 @@ class Visualizer {
             : null;
         const cellClasses = ["global-cell"];
         if (allocation) cellClasses.push("allocation-linked");
-        if (allocation && allocation.freed)
-          cellClasses.push("allocation-freed");
+        if (allocation && allocation.freed) cellClasses.push("allocation-freed");
 
         html += `<div class="${cellClasses.join(" ")}" data-addr="${v.addr}"${this.allocationStyleAttr(allocation)}>`;
-        html += this.renderMemName(
-          `<span class="mem-type">${typeStr}</span> ${name}`,
-        );
+        html += this.renderMemName(`<span class="mem-type">${typeStr}</span> ${name}`);
         if (this.isPointer(v.type)) {
-          html += this.renderPointerValue(
-            name,
-            v.value,
-            v.type,
-            ptrClass,
-            allocation,
-          );
+          html += this.renderPointerValue(name, v.value, v.type, ptrClass, allocation);
         } else {
           html += `<span class="mem-value ${ptrClass}">${this.formatVal(v.value, v.type)}</span>`;
         }
@@ -253,12 +233,9 @@ class Visualizer {
   }
 
   clear() {
-    this.stackEl.innerHTML =
-      '<div class="empty-state">Run code to see stack</div>';
-    this.heapEl.innerHTML =
-      '<div class="empty-state">No heap allocations</div>';
-    this.globalEl.innerHTML =
-      '<div class="empty-state">No global variables</div>';
+    this.stackEl.innerHTML = '<div class="empty-state">Run code to see stack</div>';
+    this.heapEl.innerHTML = '<div class="empty-state">No heap allocations</div>';
+    this.globalEl.innerHTML = '<div class="empty-state">No global variables</div>';
     this.prevState = null;
   }
 }

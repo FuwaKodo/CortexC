@@ -77,25 +77,25 @@ const CHAR_ESCAPE_SEQUENCE = Object.freeze({
  * @property {*} value - Token value, such as "int", "x", 123, or ";"
  * @property {number} line - Source line number where the token starts
  * @property {number} col - Source column number where the token starts
-*/
+ */
 
 /**
- * Converts raw C source code into a list of tokens. 
- * 
+ * Converts raw C source code into a list of tokens.
+ *
  * The tokenizer recognizes:
- *  - keywords: int, return, malloc 
+ *  - keywords: int, return, malloc
  *  - identifiers: 'x', 'ptr', 'main'
  *  - numbers: 123
  *  - strings: 'hello'
  *  - char literals: 'A', 'a'
- *  - operators: '+', 
+ *  - operators: '+',
  *  - punctuation: ';', '(', ')', '{', '}'
- * 
+ *
  * Whitespace and comments are skipped.
- * 
- * @param {string} src - Raw source code from the editor 
+ *
+ * @param {string} src - Raw source code from the editor
  * @returns {Token[]} Tokens for the parser, ending with an EOF token
-*/
+ */
 function tokenize(src) {
   const tokens = [];
   let i = 0;
@@ -103,8 +103,8 @@ function tokenize(src) {
   let col = 1;
 
   /**
-   * Moves to the next source character. 
-   *  
+   * Moves to the next source character.
+   *
    * @returns {void}
    */
   function advance() {
@@ -250,13 +250,13 @@ function tokenize(src) {
 }
 
 // Expose tokenizer utilities for Node-based tests
-if (typeof module !== 'undefined' && module.exports) {
+if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    TOKENTYPES, 
-    KEYWORDS, 
-    OPERATIONS, 
-    STRING_ESCAPE_SEQUENCE, 
-    CHAR_ESCAPE_SEQUENCE, 
+    TOKENTYPES,
+    KEYWORDS,
+    OPERATIONS,
+    STRING_ESCAPE_SEQUENCE,
+    CHAR_ESCAPE_SEQUENCE,
     tokenize,
-  }
-} 
+  };
+}

@@ -16,11 +16,7 @@ function getLineIndent(line) {
 }
 
 function initEditor(codeInput, onCommit) {
-  function commitEditorChange(
-    nextValue,
-    selectionStart,
-    selectionEnd = selectionStart,
-  ) {
+  function commitEditorChange(nextValue, selectionStart, selectionEnd = selectionStart) {
     codeInput.value = nextValue;
     codeInput.selectionStart = selectionStart;
     codeInput.selectionEnd = selectionEnd;
@@ -41,8 +37,7 @@ function initEditor(codeInput, onCommit) {
     }
 
     const firstLineStart = getLineStart(text, start);
-    const selectionEndIndex =
-      end > start && text[end - 1] === "\n" ? end - 1 : end;
+    const selectionEndIndex = end > start && text[end - 1] === "\n" ? end - 1 : end;
     const lastLineEnd = getLineEnd(text, selectionEndIndex);
     const lines = text.slice(firstLineStart, lastLineEnd).split("\n");
     const indentedBlock = lines.map((line) => INDENT_UNIT + line).join("\n");
@@ -58,8 +53,7 @@ function initEditor(codeInput, onCommit) {
     const start = codeInput.selectionStart;
     const end = codeInput.selectionEnd;
     const firstLineStart = getLineStart(text, start);
-    const selectionEndIndex =
-      end > start && text[end - 1] === "\n" ? end - 1 : end;
+    const selectionEndIndex = end > start && text[end - 1] === "\n" ? end - 1 : end;
     const lastLineEnd = getLineEnd(text, selectionEndIndex);
     const lines = text.slice(firstLineStart, lastLineEnd).split("\n");
 
@@ -86,13 +80,9 @@ function initEditor(codeInput, onCommit) {
 
     if (removedTotal === 0) return;
 
-    const nextValue =
-      text.slice(0, firstLineStart) + outdentedBlock + text.slice(lastLineEnd);
+    const nextValue = text.slice(0, firstLineStart) + outdentedBlock + text.slice(lastLineEnd);
     if (start === end) {
-      commitEditorChange(
-        nextValue,
-        Math.max(firstLineStart, start - removedFromFirstLine),
-      );
+      commitEditorChange(nextValue, Math.max(firstLineStart, start - removedFromFirstLine));
       return;
     }
     commitEditorChange(
@@ -113,8 +103,7 @@ function initEditor(codeInput, onCommit) {
     const afterCaret = text.slice(end, lineEnd);
     const baseIndent = getLineIndent(lineText);
     const shouldIncreaseIndent = /{$/.test(beforeCaret.trimEnd());
-    const shouldFormatBraceBlock =
-      shouldIncreaseIndent && afterCaret.trimStart().startsWith("}");
+    const shouldFormatBraceBlock = shouldIncreaseIndent && afterCaret.trimStart().startsWith("}");
 
     if (shouldFormatBraceBlock) {
       const insertion = `\n${baseIndent}${INDENT_UNIT}\n${baseIndent}`;
@@ -125,9 +114,7 @@ function initEditor(codeInput, onCommit) {
       return;
     }
 
-    const nextIndent = shouldIncreaseIndent
-      ? baseIndent + INDENT_UNIT
-      : baseIndent;
+    const nextIndent = shouldIncreaseIndent ? baseIndent + INDENT_UNIT : baseIndent;
     const insertion = `\n${nextIndent}`;
     commitEditorChange(
       text.slice(0, start) + insertion + text.slice(end),

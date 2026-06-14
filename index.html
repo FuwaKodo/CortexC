@@ -1,47 +1,53 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
-<head>
+  <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CortexC - Memory Visualizer</title>
     <link rel="stylesheet" href="styles/cortexc.css" />
-</head>
+  </head>
 
-<body>
+  <body>
     <div id="crashOverlay" class="crash-overlay" hidden>
-        <div class="crash-card" role="alertdialog" aria-live="assertive" aria-labelledby="crashTitle">
-            <button id="crashCloseBtn" class="crash-close-btn" type="button" aria-label="Close crash screen">&times;</button>
-            <div class="crash-kicker">Runtime Crash</div>
-            <h2 id="crashTitle" class="crash-title">Program Crashed</h2>
-            <p id="crashReason" class="crash-reason">Execution stopped because of a runtime error.</p>
-            <p id="crashLine" class="crash-line"></p>
-            <p class="crash-hint">Click the X, press Reset, or edit the code to recover.</p>
-        </div>
+      <div class="crash-card" role="alertdialog" aria-live="assertive" aria-labelledby="crashTitle">
+        <button
+          id="crashCloseBtn"
+          class="crash-close-btn"
+          type="button"
+          aria-label="Close crash screen"
+        >
+          &times;
+        </button>
+        <div class="crash-kicker">Runtime Crash</div>
+        <h2 id="crashTitle" class="crash-title">Program Crashed</h2>
+        <p id="crashReason" class="crash-reason">Execution stopped because of a runtime error.</p>
+        <p id="crashLine" class="crash-line"></p>
+        <p class="crash-hint">Click the X, press Reset, or edit the code to recover.</p>
+      </div>
     </div>
     <header>
-        <h1>CortexC</h1>
-        <span class="subtitle">C Memory Visualizer</span>
-        <div class="controls">
-            <button id="runBtn">&#9654; Run</button>
-            <button id="stepBtn">&#9197; Step</button>
-            <button id="resetBtn">&#8634; Reset</button>
-            <button id="themeToggleBtn" type="button" aria-pressed="false">White Mode</button>
-            <select id="speedSelect">
-                <option value="1000">Slow</option>
-                <option value="500" selected>Normal</option>
-                <option value="150">Fast</option>
-            </select>
-            <span class="step-counter" id="stepCounter">Step 0</span>
-        </div>
+      <h1>CortexC</h1>
+      <span class="subtitle">C Memory Visualizer</span>
+      <div class="controls">
+        <button id="runBtn">&#9654; Run</button>
+        <button id="stepBtn">&#9197; Step</button>
+        <button id="resetBtn">&#8634; Reset</button>
+        <button id="themeToggleBtn" type="button" aria-pressed="false">White Mode</button>
+        <select id="speedSelect">
+          <option value="1000">Slow</option>
+          <option value="500" selected>Normal</option>
+          <option value="150">Fast</option>
+        </select>
+        <span class="step-counter" id="stepCounter">Step 0</span>
+      </div>
     </header>
 
     <main>
-        <section class="code-panel">
-            <div class="panel-header">Code</div>
-            <div class="code-editor">
-                <div class="line-numbers" id="lineNumbers"></div>
-                <textarea id="codeInput" spellcheck="false">
+      <section class="code-panel">
+        <div class="panel-header">Code</div>
+        <div class="code-editor">
+          <div class="line-numbers" id="lineNumbers"></div>
+          <textarea id="codeInput" spellcheck="false">
 int globalCount = 10;
 int add(int a, int b) {
     int result = a + b;
@@ -59,41 +65,42 @@ int main() {
     printf("sum = %d, *ptr = %d\n", sum, *ptr);
     free(ptr);
     return 0;
-}</textarea>
-            </div>
-            <div class="editor-statusbar" aria-live="polite">
-                <span id="syntaxBadge" class="syntax-badge syntax-ok">Syntax OK</span>
-                <span id="syntaxMessage" class="syntax-message">Ready to edit and run.</span>
-            </div>
-        </section>
+}</textarea
+          >
+        </div>
+        <div class="editor-statusbar" aria-live="polite">
+          <span id="syntaxBadge" class="syntax-badge syntax-ok">Syntax OK</span>
+          <span id="syntaxMessage" class="syntax-message">Ready to edit and run.</span>
+        </div>
+      </section>
 
-        <section class="memory-panel">
-            <div class="memory-regions">
-                <div class="memory-region stack-region">
-                    <div class="region-header stack-header">Stack</div>
-                    <div id="stackViz" class="region-content">
-                        <div class="empty-state">Run code to see stack</div>
-                    </div>
-                </div>
-                <div class="memory-region heap-region">
-                    <div class="region-header heap-header">Heap</div>
-                    <div id="heapViz" class="region-content">
-                        <div class="empty-state">No heap allocations</div>
-                    </div>
-                </div>
-                <div class="memory-region global-region">
-                    <div class="region-header global-header">Global / Static</div>
-                    <div id="globalViz" class="region-content">
-                        <div class="empty-state">No global variables</div>
-                    </div>
-                </div>
+      <section class="memory-panel">
+        <div class="memory-regions">
+          <div class="memory-region stack-region">
+            <div class="region-header stack-header">Stack</div>
+            <div id="stackViz" class="region-content">
+              <div class="empty-state">Run code to see stack</div>
             </div>
-        </section>
+          </div>
+          <div class="memory-region heap-region">
+            <div class="region-header heap-header">Heap</div>
+            <div id="heapViz" class="region-content">
+              <div class="empty-state">No heap allocations</div>
+            </div>
+          </div>
+          <div class="memory-region global-region">
+            <div class="region-header global-header">Global / Static</div>
+            <div id="globalViz" class="region-content">
+              <div class="empty-state">No global variables</div>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <section class="console-panel">
-        <div class="panel-header console-header">Console Output</div>
-        <pre id="consoleOutput"></pre>
+      <div class="panel-header console-header">Console Output</div>
+      <pre id="consoleOutput"></pre>
     </section>
 
     <script src="src/core/tokenizer.js"></script>
@@ -104,6 +111,5 @@ int main() {
     <script src="src/utils/editor.js"></script>
     <script src="src/ui/controller.js"></script>
     <script src="src/main.js"></script>
-</body>
-
+  </body>
 </html>

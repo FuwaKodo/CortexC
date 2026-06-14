@@ -120,21 +120,55 @@ function tokenize(src) {
     i += 1;
   }
 
+  /**
+   * Checks whether a character is whitespace.
+   *
+   * Whitespaces includes:
+   * - tabs
+   * - spaces
+   * - newlines
+   *
+   * @param {string} char - Character to check
+   * @returns {boolean} True if the character is whitespace
+   */
   function isWhiteSpace(char) {
     return /\s/.test(char);
   }
+
+  /**
+   * Checks whether the current source position starts a line comment.
+   *
+   * @returns {boolean} True if the current position starts a line comment
+   */
   function isLineCommentStart() {
     return src[i] === "/" && src[i + 1] === "/";
   }
+
+  /**
+   * Checks whether the current source position starts a block comment.
+   *
+   * @returns {boolean} True if the current position starts a block comment
+   */
   function isBlockCommentStart() {
     return src[i] === "/" && src[i + 1] === "*";
   }
 
+  /**
+   * Skips characters until the end of the current line comment.
+   *
+   * @returns {void}
+   */
   function skipLineComment() {
     while (i < src.length && src[i] !== "\n") {
       advance();
     }
   }
+
+  /**
+   * Skips characters until the end of the current block comment.
+   *
+   * @returns {void}
+   */
   function skipBlockComment() {
     advance();
     advance();
@@ -146,6 +180,7 @@ function tokenize(src) {
       advance();
     }
   }
+
   function skipIgnored() {
     while (i < src.length) {
       if (isWhiteSpace(src[i])) {

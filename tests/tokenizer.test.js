@@ -11,3 +11,12 @@ test("tokenize an int declaration", () => {
     ["int", "x", "=", 5, ";", ""],
   );
 });
+
+test("tokenize a block declaration", () => {
+  const tokens = tokenize("/**/");
+
+  assert.deepEqual(
+    tokens.map((token) => token.value),
+    [""],
+  );
+});

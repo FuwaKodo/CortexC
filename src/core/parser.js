@@ -1,3 +1,89 @@
+/**
+ * Represents the full parsed program.
+ * 
+ * @typedef {Object} ProgramNode
+ * @property {GlobalDeclarationNode[]} globals - Global variable declarations
+ * @property {Object<string, FunctionNode>} functions - Function definitions indexed by function name
+ */
+
+/**
+ * Represents one function parameter.
+ * 
+ * @typedef {Object} ParameterNode
+ * @property {CType} type - Parameter type
+ * @property {string} name - Parameter name
+ */
+
+/**
+ * Represents a parsed function definition.
+ * 
+ * @typedef {Object} FunctionNode
+ * @property {"func"} kind - Node kind
+ * @property {CType} returnType - Function return type
+ * @property {string} name - Function name 
+ * @property {ParameterNode[]} params - Function parameters
+ * @property {StatementNode[]} body - Function body statements
+ * @property {number} line - Source line where the function starts
+ */
+
+/**
+ * Represents a parsed global variable declaration. 
+ * 
+ * @typedef {Object} GlobalDeclarationNode
+ * @property {"global_decl"} kind - Node kind
+ * @property {CType} type - Variable type
+ * @property {string} name - Variable name
+ * @property {ExpressionNode | null} [value] - Initial scalar value expression
+ * @property {number | null} [arraySize] - Array size, if this is an array
+ * @property {ExpressionNode[] | null} [arrayInit] - Array initializer expressions
+ * @property {number} line - Source line where the declaration starts
+ */
+
+/**
+ * Represents a parsed statement inside a function body.
+ * 
+ * Statement kinds:
+ * - "local_decl": local variable or local array declaration
+ * - "return": return statement
+ * - "printf": printf statement
+ * - "free": free(ptr) statement
+ * - "deref_assign": pointer dereference assignment, such as *ptr = 42;
+ * - "array_assign": array element assignment, such as arr[2] = 99;
+ * - "assign": scalar variable assignment, such as x = 5;
+ * - "compound_assign": compound assignment, such as x += 1;
+ * - "unary_stmt": unary update statement, such as x++ or x--;
+ * - "expr_stmt": expression used as a statement, usually a function call. 
+ * 
+ * @typedef {Object} StatementNode
+ * @property {"local_decl" | "return" | "printf" | "free" | "deref_assign" | "array_assign" | "assign" | "compound_assign" | "unary_stmt" | "expr_stmt"} kind - Statement kind
+ * @property {number} line - Source line where the statement starts
+ */
+
+/**
+ * Represents a parsed expression. 
+ * 
+ * Expression kinds:
+ * - "num": numeric value, including number literals, char literals, and NULL
+ * - "str": string literal
+ * - "var": variable reference
+ * - "binop": binary operation, such as a + b or a == b
+ * - "addr_of": address-of expression, such as &x
+ * - "deref": pointer dereference expression, such as *ptr
+ * - "negate": numeric negation, such as -x
+ * - "not": logical not, such as !x
+ * - "sizeof": sizeof(type)
+ * - "cast": type cast, such as (int*)ptr
+ * - "malloc": malloc(size)
+ * - "call": function call, such as add(x, y)
+ * - "array_access": array access, such as arr[2]
+ * 
+ * Note: expression nodes currently do not store source line/column positions.
+ * Runtime errors usually use the containing statement's line instead.
+ * 
+ * @typedef {Object} ExpressionNode
+ * @property {"num" | "str" | "var" | "binop" | "addr_of" | "deref" | "negate" | "not" | "sizeof" | "cast" | "malloc" | "call" | "array_access"} kind - Expression kind
+ */
+
 class Parser {
   constructor(tokens) {
     this.tokens = tokens;

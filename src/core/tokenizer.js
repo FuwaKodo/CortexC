@@ -88,9 +88,9 @@ const CHAR_ESCAPE_SEQUENCE = Object.freeze({
  *  - keywords: int, return, malloc
  *  - identifiers: 'x', 'ptr', 'main'
  *  - numbers: 123
- *  - strings: 'hello'
+ *  - strings: "hello"
  *  - char literals: 'A', 'a'
- *  - operators: '+',
+ *  - operators: '+', '-', '*', '/', '=', '==', '+=', '&&'
  *  - punctuation: ';', '(', ')', '{', '}'
  *
  * Whitespace and comments are skipped.
@@ -123,7 +123,7 @@ function tokenize(src) {
   /**
    * Checks whether a character is whitespace.
    *
-   * Whitespaces includes:
+   * Whitespace includes:
    * - tabs
    * - spaces
    * - newlines
@@ -181,6 +181,16 @@ function tokenize(src) {
     }
   }
 
+  /**
+   * Skips characters that should not become tokens.
+   *
+   * Skipped characters include:
+   *  - Whitespace
+   *  - Line comments
+   *  - Block comments
+   *
+   * @returns {void}
+   */
   function skipIgnored() {
     while (i < src.length) {
       if (isWhiteSpace(src[i])) {
@@ -195,6 +205,18 @@ function tokenize(src) {
     }
   }
 
+  /**
+   * Adds a token to the token list.
+   *
+   * tokenLine and tokenCol default to the current source position.
+   *
+   * @param {string} type - Token type from TOKENTYPES
+   * @param {*} value - Token value
+   * @param {number} tokenLine - Source line where the token starts
+   * @param {number} tokenCol - Source column where the token starts
+   *
+   * @returns {void}
+   */
   function pushToken(type, value, tokenLine = line, tokenCol = col) {
     tokens.push({
       type: type,
@@ -204,81 +226,268 @@ function tokenize(src) {
     });
   }
 
+  /**
+   * Checks whether a character can start a string token.
+   *
+   * @param {string} char - The character to check
+   *
+   * @returns {boolean} True if the character can start a string
+   */
+  function isStringStart(char) {
+    return char === '"';
+  }
+
+  /**
+   * Reads a double-quoted string literal and pushes a string token.
+   *
+   * @param {number} startLine - Line where the string starts
+   * @param {number} startCol - Column where the string starts
+   *
+   * @returns {void}
+   */
+  function readStringLiteral(startLine, startCol) {
+    // skip opening "
+    advance();
+
+    let string = "";
+
+    while (i < src.length && src[i] !== '"') {
+      if (src[i] === "\\") {
+        advance();
+        string += STRING_ESCAPE_SEQUENCE[src[i]] || src[i];
+      } else {
+        string += src[i];
+      }
+
+      advance();
+    }
+
+    if (i < src.length) {
+      // skip closing "
+      advance();
+    }
+
+    pushToken(TOKENTYPES.STRING, string, startLine, startCol);
+  }
+
+  /**
+   * Checks whether a character can start a char token.
+   *
+   * @param {string} char - The character to check
+   *
+   * @returns {boolean} True if the character can start an char literal
+   */
+  function isCharStart(char) {
+    return char === "'";
+  }
+
+  /**
+   * Reads a single-quoted character literal and pushes a character token.
+   *
+   * @param {number} startLine - Line where the char literal starts
+   * @param {number} startCol - Column where the char literal starts
+   *
+   * @returns {void}
+   */
+  function readCharLiteral(startLine, startCol) {
+    // skip opening '
+    advance();
+
+    let char = src[i];
+
+    if (char === "\\") {
+      advance();
+      char = CHAR_ESCAPE_SEQUENCE[src[i]] || src[i];
+    }
+
+    // skip character
+    advance();
+
+    if (i < src.length && src[i] === "'") {
+      // skip closing '
+      advance();
+    }
+
+    pushToken(TOKENTYPES.CHAR_LIT, char.charCodeAt(0), startLine, startCol);
+  }
+
+  /**
+   * Checks whether a character can start a digit
+   *
+   * @param {string} char - The character to check
+   *
+   * @returns {boolean} True if the character is a digit, otherwise false
+   */
+  function isDigitStart(char) {
+    return /[0-9]/.test(char);
+  }
+
+  /**
+   * Checks whether a character can appear inside a number literal.
+   *
+   * Examples:
+   *  - 123
+   *  - 3.14
+   *  - 0xff
+   *  - 0xFF
+   *
+   * @param {string} char - The character to check
+   *
+   * @returns {boolean} True if the character can appear in a number literal, otherwise false
+   */
+  function isNumberLiteralChar(char) {
+    return /[0-9.xXa-fA-F]/.test(char);
+  }
+
+  /**
+   * Reads a numeric literal and pushes a number token.
+   *
+   * @param {number} startLine - Line where the number literal starts
+   * @param {number} startCol - Column where the number literal starts
+   *
+   * @returns {void}
+   */
+  function readNumberLiteral(startLine, startCol) {
+    let number = "";
+
+    while (i < src.length && isNumberLiteralChar(src[i])) {
+      number += src[i];
+      advance();
+    }
+
+    pushToken(TOKENTYPES.NUMBER, Number(number), startLine, startCol);
+  }
+
+  /**
+   * Checks whether a character can start an operator token.
+   *
+   * @param {string} char - The character to check
+   *
+   * @returns {boolean} True if the character can start an operator
+   */
+  function isOperatorStart(char) {
+    return "+-*/%=!<>&|^~".includes(char);
+  }
+
+  /**
+   * Reads an operator token and pushes a operator token.
+   *
+   * @param {number} startLine - Line where the operator starts
+   * @param {number} startCol - Column where the operator starts
+   *
+   * @returns {void}
+   */
+  function readOperator(startLine, startCol) {
+    let operator = src[i];
+    advance();
+
+    if (i < src.length && OPERATIONS.has(operator + src[i])) {
+      operator += src[i];
+      advance();
+    }
+
+    pushToken(TOKENTYPES.OP, operator, startLine, startCol);
+  }
+
+  /**
+   * Checks whether a character is a punctuation symbol.
+   *
+   * @param {string} char - The character to check
+   *
+   * @returns {boolean} True if the character is punctuation, otherwise false 
+   */
+  function isPunctuation(char) {
+    return "(){}[];,.".includes(char);
+  }
+
+  /**
+   * Reads a punctuation token and pushes a punctuation token.
+   *
+   * @param {number} startLine - Line where the punctuation starts.
+   * @param {number} startCol - Column where the punctuation starts.
+   *
+   * @returns {void}
+   */
+  function readPunctuation(startLine, startCol) {
+    pushToken(TOKENTYPES.PUNC, src[i], startLine, startCol);
+    advance();
+  }
+
+  /**
+   * Checks whether a character can start a word (identifier or keyword).
+   * @param {string} char - The character to check
+   *
+   * @returns {boolean} True if the character can start a word (identifier or keyword)
+   */
+  function isWordStart(char) {
+    return /[a-zA-Z_]/.test(char);
+  }
+
+  /**
+   * Checks whether a character can appear in a word (identifier or keyword).
+   *
+   * @param {string} char - The character to check
+   *
+   * @returns {boolean} True if the character can appear in a word, otherwise false
+   */
+  function isWordChar(char) {
+    return /[a-zA-Z0-9_]/.test(char);
+  }
+
+  /**
+   * Reads a word (identifier or keyword) and pushes the matching token.
+   *
+   * Reads the full word, then checks if the word is reserved. Reserved
+   * keywords become KEYWORD tokens and all other words become IDENT tokens.
+   *
+   * Example:
+   * - int: KEYWORD token
+   * - main: IDENT token
+   * - x: IDENT token
+   *
+   * @param {number} startLine - Line where the word starts
+   * @param {number} startCol - Column where the word starts
+   *
+   * @returns {void}
+   */
+  function readWord(startLine, startCol) {
+    let word = "";
+
+    while (i < src.length && isWordChar(src[i])) {
+      word += src[i];
+      advance();
+    }
+
+    const tokenType = KEYWORDS.has(word) ? TOKENTYPES.KEYWORD : TOKENTYPES.IDENT;
+
+    pushToken(tokenType, word, startLine, startCol);
+  }
+
   while (i < src.length) {
     skipIgnored();
     if (i >= src.length) {
       break;
     }
 
+    // Store where this token begins
     const startLine = line;
     const startCol = col;
     const currentChar = src[i];
 
-    if (currentChar === '"') {
-      // string literal
-      advance();
-      let string = "";
-      while (i < src.length && src[i] !== '"') {
-        if (src[i] === "\\") {
-          advance();
-          string += STRING_ESCAPE_SEQUENCE[src[i]] || src[i];
-        } else {
-          string += src[i];
-        }
-        advance();
-      }
-      if (i < src.length) {
-        advance();
-      }
-      pushToken(TOKENTYPES.STRING, string, startLine, startCol);
-    } else if (currentChar === "'") {
-      // char literal
-      advance();
-      let char = src[i];
-      if (char === "\\") {
-        advance();
-        char = CHAR_ESCAPE_SEQUENCE[src[i]] || src[i];
-      }
-      advance();
-      if (i < src.length && src[i] === "'") {
-        advance();
-      }
-      pushToken(TOKENTYPES.CHAR_LIT, char.charCodeAt(0), startLine, startCol);
-    } else if (/[a-zA-Z_]/.test(currentChar)) {
-      // keyword or identifier
-      let word = "";
-      while (i < src.length && /[a-zA-Z0-9_]/.test(src[i])) {
-        word += src[i];
-        advance();
-      }
-      pushToken(
-        KEYWORDS.has(word) ? TOKENTYPES.KEYWORD : TOKENTYPES.IDENT,
-        word,
-        startLine,
-        startCol,
-      );
-    } else if (/[0-9]/.test(currentChar)) {
-      // number literal
-      let number = "";
-      while (i < src.length && /[0-9.xXa-fA-F]/.test(src[i])) {
-        number += src[i];
-        advance();
-      }
-      pushToken(TOKENTYPES.NUMBER, Number(number), startLine, startCol);
-    } else if ("+-*/%=!<>&|^~".includes(currentChar)) {
-      // operator
-      let operator = currentChar;
-      advance();
-      if (i < src.length && OPERATIONS.has(operator + src[i])) {
-        operator += src[i];
-        advance();
-      }
-      pushToken(TOKENTYPES.OP, operator, startLine, startCol);
-    } else if ("(){}[];,.".includes(currentChar)) {
-      // punctuation
-      pushToken(TOKENTYPES.PUNC, currentChar, startLine, startCol);
-      advance();
+    if (isStringStart(currentChar)) {
+      readStringLiteral(startLine, startCol);
+    } else if (isCharStart(currentChar)) {
+      readCharLiteral(startLine, startCol);
+    } else if (isWordStart(currentChar)) {
+      readWord(startLine, startCol);
+    } else if (isDigitStart(currentChar)) {
+      readNumberLiteral(startLine, startCol);
+    } else if (isOperatorStart(currentChar)) {
+      readOperator(startLine, startCol);
+    } else if (isPunctuation(currentChar)) {
+      readPunctuation(startLine, startCol);
     } else {
+      // Unknown character, skip it
       advance();
     }
   }

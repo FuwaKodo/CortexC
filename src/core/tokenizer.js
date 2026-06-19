@@ -497,13 +497,13 @@ function tokenize(src) {
 }
 
 // Expose tokenizer utilities for Node-based tests
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = {
-    TOKENTYPES,
-    KEYWORDS,
-    OPERATIONS,
-    STRING_ESCAPE_SEQUENCE,
-    CHAR_ESCAPE_SEQUENCE,
-    tokenize,
-  };
-}
+// if (typeof module !== "undefined" && module.exports) {
+//   module.exports = {
+//     TOKENTYPES,
+//     KEYWORDS,
+//     OPERATIONS,
+//     STRING_ESCAPE_SEQUENCE,
+//     CHAR_ESCAPE_SEQUENCE,
+//     tokenize,
+//   };
+// }

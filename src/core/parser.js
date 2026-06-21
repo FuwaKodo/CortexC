@@ -492,10 +492,10 @@ class Parser {
 
   /**
    * Parses a printf statement
-   * 
+   *
    * Note: first argument must be a string token. Any remaining comma-seperated
-   * arguments are parsed as expressions. 
-   * 
+   * arguments are parsed as expressions.
+   *
    * @param {number} startLine - Source line where the printf statement starts
    *
    * @returns {StatementNode} Parsed printf statement
@@ -515,8 +515,8 @@ class Parser {
   }
 
   /**
-   * Parses an expression. 
-   * 
+   * Parses an expression.
+   *
    * @returns {ExpressionNode} Parsed expression node
    */
   parseExpr() {
@@ -524,9 +524,9 @@ class Parser {
   }
 
   /**
-   * Parses logical OR expressions. 
-   * 
-   * @returns {ExpressionNode} Parsed expression node 
+   * Parses logical OR expressions.
+   *
+   * @returns {ExpressionNode} Parsed expression node
    */
   parseOr() {
     let left = this.parseAnd();
@@ -539,8 +539,8 @@ class Parser {
 
   /**
    * Parses logical AND expressions.
-   * 
-   * @returns {ExpressionNode} Parsed expression node 
+   *
+   * @returns {ExpressionNode} Parsed expression node
    */
   parseAnd() {
     let left = this.parseEquality();
@@ -552,12 +552,12 @@ class Parser {
   }
 
   /**
-   * Parsed equality comparison expressions. 
-   * 
+   * Parsed equality comparison expressions.
+   *
    * Supported operators:
    * - ==
-   * - != 
-   * 
+   * - !=
+   *
    * @returns {ExpressionNode} Parsed expression node
    */
   parseEquality() {
@@ -571,13 +571,13 @@ class Parser {
 
   /**
    * Parses relational comparison expressions.
-   * 
+   *
    * Supported operators:
    * - <
    * - >
-   * - <= 
+   * - <=
    * - >=
-   * 
+   *
    * @returns {ExpressionNode} Parsed expression node
    */
   parseComparison() {
@@ -591,11 +591,11 @@ class Parser {
 
   /**
    * Parses addition and subtraction expressions.
-   * 
+   *
    * Supported operators:
    * - +
    * - -
-   * 
+   *
    * @returns {ExpressionNode} Parsed expression node
    */
   parseAddSub() {
@@ -609,12 +609,12 @@ class Parser {
 
   /**
    * Parses multiplication, division, and modulo expresions
-   * 
+   *
    * Supported operators:
    * - *
    * - /
    * - %
-   * 
+   *
    * @returns {ExpressionNode} Parsed expression node
    */
   parseMulDiv() {
@@ -627,15 +627,15 @@ class Parser {
   }
 
   /**
-   * Parses unary expressions. 
-   * 
+   * Parses unary expressions.
+   *
    * Supported unary operators:
    * - &x: address of
    * - *ptr: pointer dereference
    * - -x: numeric negation
    * - !x: logical not
-   * 
-   * @returns {ExpressionNode} Parsed expression node 
+   *
+   * @returns {ExpressionNode} Parsed expression node
    */
   parseUnary() {
     if (this.match(TOKENTYPES.OP, "&")) {
@@ -663,7 +663,7 @@ class Parser {
 
   /**
    * Parses primary expressions
-   * 
+   *
    * Supported forms:
    * - number literal: 123
    * - char literal: 'A'
@@ -676,7 +676,7 @@ class Parser {
    * - function call: add(x, y)
    * - array access: arr[2]
    * - variable reference: x
-   * 
+   *
    * @returns {ExpressionNode} Parsed expression node
    */
   parsePrimary() {

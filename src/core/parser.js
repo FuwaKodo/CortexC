@@ -85,35 +85,99 @@
  */
 
 class Parser {
+  /**
+   * Creates a parser for a list of tokens.
+   * 
+   * @param {Token[]} tokens - Tokens produced by tokenizer
+   */
   constructor(tokens) {
     this.tokens = tokens;
     this.pos = 0;
   }
 
+  /**
+   * Looks ahead at a token without consuming it. 
+   * 
+   * The offset depends on the current parser position, 
+   * offset 0 means the current token, offset 1 means next token.
+   * 
+   * @param {number} offset - Number of tokens ahead to inspect 
+   * 
+   * @returns {Token} Token at the requested position
+   */
   peek(offset = 0) {
     return this.tokens[Math.min(this.pos + offset, this.tokens.length - 1)];
   }
+
+  /**
+   * Returns the current token without consuming it.
+   * 
+   * Wrapper around peek(0)
+   * 
+   * @returns {Token} Current token 
+   */
   at() {
     return this.peek();
   }
+
+  /**
+   * Consumes and returns the current token.
+   * 
+   * If an expected type or value is provided, this validates the current token 
+   * before consuming it. If token does not match, a parse error is thrown.
+   * 
+   * @param {string} [type] - Expected token type (TOKENTYPES)
+   * @param {*} [value] - Expected token value  
+   * 
+   * @returns {Token} Consumed token
+   */
   eat(type, value) {
-    const t = this.at();
-    if (type && t.type !== type) this.err(`Expected ${type} but got ${t.type} (${t.value})`);
-    if (value !== undefined && t.value !== value)
-      this.err(`Expected '${value}' but got '${t.value}'`);
+    const currentToken = this.at();
+    if (type && currentToken.type !== type) 
+      this.err(`Expected ${type} but got ${currentToken.type} (${currentToken.value})`);
+    if (value !== undefined && currentToken.value !== value)
+      this.err(`Expected '${value}' but got '${currentToken.value}'`);
     this.pos++;
-    return t;
+    return currentToken;
   }
+
+  /**
+   * Throws a parser error at the current token's source line 
+   * 
+   * @param {string} msg - Error message
+   * 
+   * @throws {Error} Parse error with line information 
+   */
   err(msg) {
-    const t = this.at();
-    throw new Error(`Parse error at line ${t.line}: ${msg}`);
+    const currentToken = this.at();
+    throw new Error(`Parse error at line ${currentToken.line}: ${msg}`);
   }
+
+  /**
+   * Checks whether the current token matches an expected type and optional value.
+   * 
+   * Doesn't consume the token.
+   * 
+   * @param {string} type - Token type to match 
+   * @param {*} [value] - Optional token value to match  
+   * 
+   * @returns {boolean} True if the current token matches
+   */
   match(type, value) {
-    const t = this.at();
-    return t.type === type && (value === undefined || t.value === value);
+    const currentToken = this.at();
+    return currentToken.type === type && (value === undefined || currentToken.value === value);
   }
+
+  /**
+   * Checks whether the current token matches one of several possible values. 
+   * 
+   * @param {string} type - Token type to match 
+   * @param {Array<*>} values - Allowed token values
+   * 
+   * @returns {boolean} True if the current token matches one of the values 
+   */
   matchAny(type, values) {
-    return values.some((v) => this.match(type, v));
+    return values.some((value) => this.match(type, value));
   }
 
   parse() {

@@ -1,6 +1,6 @@
 /**
  * Represents the full parsed program.
- * 
+ *
  * @typedef {Object} ProgramNode
  * @property {GlobalDeclarationNode[]} globals - Global variable declarations
  * @property {Object<string, FunctionNode>} functions - Function definitions indexed by function name
@@ -8,7 +8,7 @@
 
 /**
  * Represents one function parameter.
- * 
+ *
  * @typedef {Object} ParameterNode
  * @property {CType} type - Parameter type
  * @property {string} name - Parameter name
@@ -16,19 +16,19 @@
 
 /**
  * Represents a parsed function definition.
- * 
+ *
  * @typedef {Object} FunctionNode
  * @property {"func"} kind - Node kind
  * @property {CType} returnType - Function return type
- * @property {string} name - Function name 
+ * @property {string} name - Function name
  * @property {ParameterNode[]} params - Function parameters
  * @property {StatementNode[]} body - Function body statements
  * @property {number} line - Source line where the function starts
  */
 
 /**
- * Represents a parsed global variable declaration. 
- * 
+ * Represents a parsed global variable declaration.
+ *
  * @typedef {Object} GlobalDeclarationNode
  * @property {"global_decl"} kind - Node kind
  * @property {CType} type - Variable type
@@ -41,7 +41,7 @@
 
 /**
  * Represents a parsed statement inside a function body.
- * 
+ *
  * Statement kinds:
  * - "local_decl": local variable or local array declaration
  * - "return": return statement
@@ -52,16 +52,16 @@
  * - "assign": scalar variable assignment, such as x = 5;
  * - "compound_assign": compound assignment, such as x += 1;
  * - "unary_stmt": unary update statement, such as x++ or x--;
- * - "expr_stmt": expression used as a statement, usually a function call. 
- * 
+ * - "expr_stmt": expression used as a statement, usually a function call.
+ *
  * @typedef {Object} StatementNode
  * @property {"local_decl" | "return" | "printf" | "free" | "deref_assign" | "array_assign" | "assign" | "compound_assign" | "unary_stmt" | "expr_stmt"} kind - Statement kind
  * @property {number} line - Source line where the statement starts
  */
 
 /**
- * Represents a parsed expression. 
- * 
+ * Represents a parsed expression.
+ *
  * Expression kinds:
  * - "num": numeric value, including number literals, char literals, and NULL
  * - "str": string literal
@@ -76,10 +76,10 @@
  * - "malloc": malloc(size)
  * - "call": function call, such as add(x, y)
  * - "array_access": array access, such as arr[2]
- * 
+ *
  * Note: expression nodes currently do not store source line/column positions.
  * Runtime errors usually use the containing statement's line instead.
- * 
+ *
  * @typedef {Object} ExpressionNode
  * @property {"num" | "str" | "var" | "binop" | "addr_of" | "deref" | "negate" | "not" | "sizeof" | "cast" | "malloc" | "call" | "array_access"} kind - Expression kind
  */
@@ -87,7 +87,7 @@
 class Parser {
   /**
    * Creates a parser for a list of tokens.
-   * 
+   *
    * @param {Token[]} tokens - Tokens produced by tokenizer
    */
   constructor(tokens) {
@@ -96,13 +96,13 @@ class Parser {
   }
 
   /**
-   * Looks ahead at a token without consuming it. 
-   * 
-   * The offset depends on the current parser position, 
+   * Looks ahead at a token without consuming it.
+   *
+   * The offset depends on the current parser position,
    * offset 0 means the current token, offset 1 means next token.
-   * 
-   * @param {number} offset - Number of tokens ahead to inspect 
-   * 
+   *
+   * @param {number} offset - Number of tokens ahead to inspect
+   *
    * @returns {Token} Token at the requested position
    */
   peek(offset = 0) {
@@ -111,10 +111,10 @@ class Parser {
 
   /**
    * Returns the current token without consuming it.
-   * 
+   *
    * Wrapper around peek(0)
-   * 
-   * @returns {Token} Current token 
+   *
+   * @returns {Token} Current token
    */
   at() {
     return this.peek();
@@ -122,18 +122,18 @@ class Parser {
 
   /**
    * Consumes and returns the current token.
-   * 
-   * If an expected type or value is provided, this validates the current token 
+   *
+   * If an expected type or value is provided, this validates the current token
    * before consuming it. If token does not match, a parse error is thrown.
-   * 
+   *
    * @param {string} [type] - Expected token type (TOKENTYPES)
-   * @param {*} [value] - Expected token value  
-   * 
+   * @param {*} [value] - Expected token value
+   *
    * @returns {Token} Consumed token
    */
   eat(type, value) {
     const currentToken = this.at();
-    if (type && currentToken.type !== type) 
+    if (type && currentToken.type !== type)
       this.err(`Expected ${type} but got ${currentToken.type} (${currentToken.value})`);
     if (value !== undefined && currentToken.value !== value)
       this.err(`Expected '${value}' but got '${currentToken.value}'`);
@@ -142,11 +142,11 @@ class Parser {
   }
 
   /**
-   * Throws a parser error at the current token's source line 
-   * 
+   * Throws a parser error at the current token's source line
+   *
    * @param {string} msg - Error message
-   * 
-   * @throws {Error} Parse error with line information 
+   *
+   * @throws {Error} Parse error with line information
    */
   err(msg) {
     const currentToken = this.at();
@@ -155,12 +155,12 @@ class Parser {
 
   /**
    * Checks whether the current token matches an expected type and optional value.
-   * 
+   *
    * Doesn't consume the token.
-   * 
-   * @param {string} type - Token type to match 
-   * @param {*} [value] - Optional token value to match  
-   * 
+   *
+   * @param {string} type - Token type to match
+   * @param {*} [value] - Optional token value to match
+   *
    * @returns {boolean} True if the current token matches
    */
   match(type, value) {
@@ -169,25 +169,25 @@ class Parser {
   }
 
   /**
-   * Checks whether the current token matches one of several possible values. 
-   * 
-   * @param {string} type - Token type to match 
+   * Checks whether the current token matches one of several possible values.
+   *
+   * @param {string} type - Token type to match
    * @param {Array<*>} values - Allowed token values
-   * 
-   * @returns {boolean} True if the current token matches one of the values 
+   *
+   * @returns {boolean} True if the current token matches one of the values
    */
   matchAny(type, values) {
     return values.some((value) => this.match(type, value));
   }
 
   /**
-   * Parses the full token list into a program node. 
-   * 
+   * Parses the full token list into a program node.
+   *
    * Parser repeatedly reads top-level declarations until it reaches EOF.
    * Each top-level declaration:
-   * - function definition stored in program.functions 
+   * - function definition stored in program.functions
    * - global declaration stored in program.globals
-   * 
+   *
    * @returns {ProgramNode} Parsed program
    */
   parse() {
@@ -202,8 +202,8 @@ class Parser {
   }
 
   /**
-   * Checks whether the current token can start a C type. 
-   * 
+   * Checks whether the current token can start a C type.
+   *
    * @returns {boolean} True if the current token starts a type
    */
   isTypeStart() {
@@ -222,12 +222,12 @@ class Parser {
   }
 
   /**
-   * Parses a C type into a CType object. 
-   * 
+   * Parses a C type into a CType object.
+   *
    * Example:
    * - int: { base: "int", pointer: 0 }
-   * 
-   * @returns {CType} Parsed C type 
+   *
+   * @returns {CType} Parsed C type
    */
   parseType() {
     let base = "";
@@ -244,8 +244,8 @@ class Parser {
   }
 
   /**
-   * Parses one top-level declaration. 
-   * 
+   * Parses one top-level declaration.
+   *
    * @returns {FunctionNode | GlobalDeclarationNode} Parsed top-level node
    */
   parseTopLevel() {
@@ -289,11 +289,11 @@ class Parser {
 
   /**
    * Parses a function definition after the return type and name are known.
-   * 
-   * @param {CType} type - Function return type 
-   * @param {string} name - Function name 
-   * @param {number} startLine - Source line where the function starts 
-   * 
+   *
+   * @param {CType} type - Function return type
+   * @param {string} name - Function name
+   * @param {number} startLine - Source line where the function starts
+   *
    * @returns {FunctionNode} - Parsed function node
    */
   parseFuncDef(type, name, startLine) {
@@ -318,9 +318,9 @@ class Parser {
   }
 
   /**
-   * Parses a block of statements surrounded by braces 
-   * 
-   * @returns {StatementNode[]} Parsed statements inside the block 
+   * Parses a block of statements surrounded by braces
+   *
+   * @returns {StatementNode[]} Parsed statements inside the block
    */
   parseBlock() {
     this.eat(TOKENTYPES.PUNC, "{");
@@ -331,8 +331,9 @@ class Parser {
   }
 
   /**
-   * 
-   * @returns 
+   * Parses one statement inside a function body.
+   *
+   * @returns {StatementNode} Parsed statement node
    */
   parseStmt() {
     const startLine = this.at().line;
@@ -418,6 +419,16 @@ class Parser {
     this.err(`Unexpected token: ${this.at().value}`);
   }
 
+  /**
+   * Parses a local variable or local array declaration.
+   *
+   * Note: local declarations appear inside function bodies.
+   * Returns: a "local_decl" statement node.
+   *
+   * @param {number} startLine = Source line where the declaration starts
+   *
+   * @returns {StatementNode} Parsed local declaration statement
+   */
   parseLocalDecl(startLine) {
     const type = this.parseType();
     const name = this.eat(TOKENTYPES.IDENT).value;
@@ -461,6 +472,13 @@ class Parser {
     };
   }
 
+  /**
+   * Parsed an array initializer.
+   *
+   * Note: each element is parsed as an expression
+   *
+   * @returns {ExpressionNode[]} Parsed array initializer expressions
+   */
   parseArrayInit() {
     this.eat(TOKENTYPES.PUNC, "{");
     const elems = [];
@@ -472,6 +490,16 @@ class Parser {
     return elems;
   }
 
+  /**
+   * Parses a printf statement
+   * 
+   * Note: first argument must be a string token. Any remaining comma-seperated
+   * arguments are parsed as expressions. 
+   * 
+   * @param {number} startLine - Source line where the printf statement starts
+   *
+   * @returns {StatementNode} Parsed printf statement
+   */
   parsePrintf(startLine) {
     this.eat();
     this.eat(TOKENTYPES.PUNC, "(");
@@ -486,10 +514,20 @@ class Parser {
     return { kind: "printf", fmt, args, line: startLine };
   }
 
+  /**
+   * Parses an expression. 
+   * 
+   * @returns {ExpressionNode} Parsed expression node
+   */
   parseExpr() {
     return this.parseOr();
   }
 
+  /**
+   * Parses logical OR expressions. 
+   * 
+   * @returns {ExpressionNode} Parsed expression node 
+   */
   parseOr() {
     let left = this.parseAnd();
     while (this.match(TOKENTYPES.OP, "||")) {
@@ -498,6 +536,12 @@ class Parser {
     }
     return left;
   }
+
+  /**
+   * Parses logical AND expressions.
+   * 
+   * @returns {ExpressionNode} Parsed expression node 
+   */
   parseAnd() {
     let left = this.parseEquality();
     while (this.match(TOKENTYPES.OP, "&&")) {
@@ -506,6 +550,16 @@ class Parser {
     }
     return left;
   }
+
+  /**
+   * Parsed equality comparison expressions. 
+   * 
+   * Supported operators:
+   * - ==
+   * - != 
+   * 
+   * @returns {ExpressionNode} Parsed expression node
+   */
   parseEquality() {
     let left = this.parseComparison();
     while (this.matchAny(TOKENTYPES.OP, ["==", "!="])) {
@@ -514,6 +568,18 @@ class Parser {
     }
     return left;
   }
+
+  /**
+   * Parses relational comparison expressions.
+   * 
+   * Supported operators:
+   * - <
+   * - >
+   * - <= 
+   * - >=
+   * 
+   * @returns {ExpressionNode} Parsed expression node
+   */
   parseComparison() {
     let left = this.parseAddSub();
     while (this.matchAny(TOKENTYPES.OP, ["<", ">", "<=", ">="])) {
@@ -522,6 +588,16 @@ class Parser {
     }
     return left;
   }
+
+  /**
+   * Parses addition and subtraction expressions.
+   * 
+   * Supported operators:
+   * - +
+   * - -
+   * 
+   * @returns {ExpressionNode} Parsed expression node
+   */
   parseAddSub() {
     let left = this.parseMulDiv();
     while (this.matchAny(TOKENTYPES.OP, ["+", "-"])) {
@@ -530,6 +606,17 @@ class Parser {
     }
     return left;
   }
+
+  /**
+   * Parses multiplication, division, and modulo expresions
+   * 
+   * Supported operators:
+   * - *
+   * - /
+   * - %
+   * 
+   * @returns {ExpressionNode} Parsed expression node
+   */
   parseMulDiv() {
     let left = this.parseUnary();
     while (this.matchAny(TOKENTYPES.OP, ["*", "/", "%"])) {
@@ -539,6 +626,17 @@ class Parser {
     return left;
   }
 
+  /**
+   * Parses unary expressions. 
+   * 
+   * Supported unary operators:
+   * - &x: address of
+   * - *ptr: pointer dereference
+   * - -x: numeric negation
+   * - !x: logical not
+   * 
+   * @returns {ExpressionNode} Parsed expression node 
+   */
   parseUnary() {
     if (this.match(TOKENTYPES.OP, "&")) {
       this.eat();
@@ -563,6 +661,24 @@ class Parser {
     return this.parsePrimary();
   }
 
+  /**
+   * Parses primary expressions
+   * 
+   * Supported forms:
+   * - number literal: 123
+   * - char literal: 'A'
+   * - string literal: "hello"
+   * - NULL
+   * - sizeof(type)
+   * - cast expression: (int*)ptr
+   * - parenthesized expression: (a + b)
+   * - malloc(size)
+   * - function call: add(x, y)
+   * - array access: arr[2]
+   * - variable reference: x
+   * 
+   * @returns {ExpressionNode} Parsed expression node
+   */
   parsePrimary() {
     if (this.match(TOKENTYPES.NUMBER)) return { kind: "num", value: this.eat().value };
     if (this.match(TOKENTYPES.CHAR_LIT)) return { kind: "num", value: this.eat().value };

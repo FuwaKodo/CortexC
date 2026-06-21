@@ -394,7 +394,7 @@ function tokenize(src) {
    *
    * @param {string} char - The character to check
    *
-   * @returns {boolean} True if the character is punctuation, otherwise false 
+   * @returns {boolean} True if the character is punctuation, otherwise false
    */
   function isPunctuation(char) {
     return "(){}[];,.".includes(char);

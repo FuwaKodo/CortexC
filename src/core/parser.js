@@ -180,8 +180,19 @@ class Parser {
     return values.some((value) => this.match(type, value));
   }
 
+  /**
+   * Parses the full token list into a program node. 
+   * 
+   * Parser repeatedly reads top-level declarations until it reaches EOF.
+   * Each top-level declaration:
+   * - function definition stored in program.functions 
+   * - global declaration stored in program.globals
+   * 
+   * @returns {ProgramNode} Parsed program
+   */
   parse() {
     const program = { globals: [], functions: {} };
+
     while (!this.match(TOKENTYPES.EOF)) {
       const decl = this.parseTopLevel();
       if (decl.kind === "func") program.functions[decl.name] = decl;
@@ -190,6 +201,11 @@ class Parser {
     return program;
   }
 
+  /**
+   * Checks whether the current token can start a C type. 
+   * 
+   * @returns {boolean} True if the current token starts a type
+   */
   isTypeStart() {
     return this.matchAny(TOKENTYPES.KEYWORD, [
       "int",
@@ -205,6 +221,14 @@ class Parser {
     ]);
   }
 
+  /**
+   * Parses a C type into a CType object. 
+   * 
+   * Example:
+   * - int: { base: "int", pointer: 0 }
+   * 
+   * @returns {CType} Parsed C type 
+   */
   parseType() {
     let base = "";
     while (this.matchAny(TOKENTYPES.KEYWORD, ["const", "static", "unsigned", "long", "short"])) {
@@ -219,6 +243,11 @@ class Parser {
     return { base: base.trim(), pointer };
   }
 
+  /**
+   * Parses one top-level declaration. 
+   * 
+   * @returns {FunctionNode | GlobalDeclarationNode} Parsed top-level node
+   */
   parseTopLevel() {
     const startLine = this.at().line;
     const type = this.parseType();
@@ -258,6 +287,15 @@ class Parser {
     return { kind: "global_decl", type, name, value, line: startLine };
   }
 
+  /**
+   * Parses a function definition after the return type and name are known.
+   * 
+   * @param {CType} type - Function return type 
+   * @param {string} name - Function name 
+   * @param {number} startLine - Source line where the function starts 
+   * 
+   * @returns {FunctionNode} - Parsed function node
+   */
   parseFuncDef(type, name, startLine) {
     this.eat(TOKENTYPES.PUNC, "(");
     const params = [];
@@ -279,6 +317,11 @@ class Parser {
     };
   }
 
+  /**
+   * Parses a block of statements surrounded by braces 
+   * 
+   * @returns {StatementNode[]} Parsed statements inside the block 
+   */
   parseBlock() {
     this.eat(TOKENTYPES.PUNC, "{");
     const stmts = [];
@@ -287,6 +330,10 @@ class Parser {
     return stmts;
   }
 
+  /**
+   * 
+   * @returns 
+   */
   parseStmt() {
     const startLine = this.at().line;
 

@@ -1,0 +1,21 @@
+{
+  "name": "cortexc",
+  "version": "1.0.0",
+  "description": "A C memory visualizer that helps users understand how variables, pointers, arrays, and function calls are stored and change in memory during program execution.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "node --test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check"
+  },
+  "keywords": [],
+  "author": "Mohan, Nikolas, Chandra",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "prettier": "^3.8.4"
+  }
+}

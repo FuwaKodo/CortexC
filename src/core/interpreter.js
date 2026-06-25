@@ -440,6 +440,43 @@ class Interpreter {
           );
         break;
       }
+      case "deref_compound_assign": {
+        const ptr = this.mem.getVar(stmt.target);
+        if (!ptr) this.crash(`Undefined variable '${stmt.target}'.`, stmt.line);
+        if (ptr.value === 0) this.crash(`Null pointer write through '${stmt.target}'.`, stmt.line);
+
+        const target = this.mem.resolveAddress(ptr.value);
+        if (!target) 
+          this.crash(
+            `Invalid pointer write at 0x${ptr.value.toString(16).toUpperCase()}.`,
+            stmt.line,
+          );
+        if (target.kind === "heap" && target.block.freed)
+          this.crash(`Write after free at 0x${ptr.value.toString(16).toUpperCase()}.`, stmt.line);
+
+        const currentValue = this.mem.deref(ptr.value); 
+        const rhs = this.evalExpr(stmt.value)
+        if (stmt.op === "/=" && rhs === 0) {
+          this.crash(`Division by zero while updating '*${stmt.target}'.`, stmt.line);
+        }
+
+        const ops = {
+          "+=": (a, b) => a + b,
+          "-=": (a, b) => a - b,
+          "*=": (a, b) => a * b,
+          "/=": (a, b) => Math.trunc(a / b),
+        };
+
+        const nextValue = ops[stmt.op](currentValue, rhs); 
+        if (!this.mem.setDeref(ptr.value, nextValue)) {
+          this.crash(
+            `Invalid pointer write at 0x${ptr.value.toString(16).toUpperCase()}.`,
+            stmt.line,
+          );
+        }
+        
+        break;
+      }
       case "array_assign": {
         const arrayVar = this.mem.getVar(stmt.name);
         if (!arrayVar) this.crash(`Undefined array '${stmt.name}'.`, stmt.line);

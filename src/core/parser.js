@@ -48,6 +48,7 @@
  * - "printf": printf statement
  * - "free": free(ptr) statement
  * - "deref_assign": pointer dereference assignment, such as *ptr = 42;
+ * - "deref_compound_assign": pointer dereference compound assignment, such as *ptr += 1; 
  * - "array_assign": array element assignment, such as arr[2] = 99;
  * - "assign": scalar variable assignment, such as x = 5;
  * - "compound_assign": compound assignment, such as x += 1;
@@ -55,7 +56,7 @@
  * - "expr_stmt": expression used as a statement, usually a function call.
  *
  * @typedef {Object} StatementNode
- * @property {"local_decl" | "return" | "printf" | "free" | "deref_assign" | "array_assign" | "assign" | "compound_assign" | "unary_stmt" | "expr_stmt"} kind - Statement kind
+ * @property {"local_decl" | "return" | "printf" | "free" | "deref_assign" | "deref_compound_assign" | "array_assign" | "assign" | "compound_assign" | "unary_stmt" | "expr_stmt"} kind - Statement kind
  * @property {number} line - Source line where the statement starts
  */
 
@@ -362,10 +363,27 @@ class Parser {
     if (this.match(TOKENTYPES.OP, "*")) {
       this.eat();
       const target = this.eat(TOKENTYPES.IDENT).value;
-      this.eat(TOKENTYPES.OP, "=");
-      const value = this.parseExpr();
-      this.eat(TOKENTYPES.PUNC, ";");
-      return { kind: "deref_assign", target, value, line: startLine };
+
+      if (this.match(TOKENTYPES.OP, "=")) {
+        this.eat(TOKENTYPES.OP, "=");
+        const value = this.parseExpr();
+        this.eat(TOKENTYPES.PUNC, ";");
+        return { kind: "deref_assign", target, value, line: startLine };
+      }
+      
+      // Support dereference compound statements
+      if (this.matchAny(TOKENTYPES.OP, ["+=", "-=", "*=", "/="])) {
+        const op = this.eat().value;
+        const value = this.parseExpr();
+        this.eat(TOKENTYPES.PUNC, ";");
+        return {
+          kind: "deref_compound_assign",
+          target,
+          op,
+          value,
+          line: startLine,
+        };
+      }
     }
 
     if (this.match(TOKENTYPES.IDENT)) {

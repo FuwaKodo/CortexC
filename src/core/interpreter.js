@@ -474,7 +474,7 @@ class Interpreter {
             stmt.line,
           );
         }
-        
+
         break;
       }
       case "array_assign": {
@@ -603,13 +603,46 @@ class Interpreter {
         throw new CallPending();
       }
       case "array_access": {
-        const arrayVar = this.mem.getVar(node.name);
-        if (!arrayVar) this.crash(`Undefined array '${node.name}'.`);
-        if (!arrayVar.isArray) this.crash(`'${node.name}' is not an array.`);
+        // const arrayVar = this.mem.getVar(node.name);
+        // if (!arrayVar) this.crash(`Undefined array '${node.name}'.`);
+        // if (!arrayVar.isArray) this.crash(`'${node.name}' is not an array.`);
+        // const idx = this.evalExpr(node.index);
+        // if (idx < 0 || idx >= arrayVar.size)
+        //   this.crash(`Array index ${idx} is out of bounds for '${node.name}'.`);
+        // return arrayVar.values[idx];
+        const variable = this.mem.getVar(node.name);
+        if (!variable) this.crash(`Undefined variable '${node.name}'.`);
+
         const idx = this.evalExpr(node.index);
-        if (idx < 0 || idx >= arrayVar.size)
-          this.crash(`Array index ${idx} is out of bounds for '${node.name}'.`);
-        return arrayVar.values[idx];
+        if (!Number.isInteger(idx)) this.crash(`Array index for '${node.name}' must be an integer.`);
+        if (idx < 0) this.crash(`Array index ${idx} is out of bounds for '${node.name}'.`);
+        
+        // array variable
+        if (variable.isArray) {
+          if (idx >= variable.size) this.crash(`Array index ${idx} is out of bounds for '${node.name}'.`);
+          
+          return variable.values[idx];
+        }
+
+        // pointer variable
+        if (variable.type && variable.type.pointer) {
+          const elemType = {
+            base: variable.type.base, 
+            pointer: variable.type.pointer -1
+          };
+
+          const elemSize = getTypeSize(elemType);
+          const addr = variable.value + idx * elemSize; 
+          if (addr === 0) this.crash(`Null pointer dereference through '${node.name}'.`);
+
+          const target = this.mem.resolveAddress(addr);
+          if (!target) this.crash(`Invalid pointer dereference at 0x${addr.toString(16).toUpperCase()}.`);
+          if (target.kind === "heap" && target.block.freed) this.crash(`Use after free at 0x${addr.toString(16).toUpperCase()}.`);
+          
+          return this.mem.deref(addr);
+        }
+
+        this.crash(`'${node.name}' is not an array or pointer.`);
       }
       default:
         return 0;

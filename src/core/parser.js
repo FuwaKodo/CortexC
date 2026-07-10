@@ -492,19 +492,56 @@ class Parser {
 
   /**
    * Parsed an array initializer.
-   *
+   *  
+   * Supports both:
+   * - int arr[3] = {1, 2, 3};
+   * - char word[6] = "Hello";
+   * 
    * Note: each element is parsed as an expression
    *
    * @returns {ExpressionNode[]} Parsed array initializer expressions
    */
   parseArrayInit() {
-    this.eat(TOKENTYPES.PUNC, "{");
-    const elems = [];
-    while (!this.match(TOKENTYPES.PUNC, "}")) {
-      if (elems.length > 0) this.eat(TOKENTYPES.PUNC, ",");
-      elems.push(this.parseExpr());
+    if (this.match(TOKENTYPES.STRING)) {
+      const stringValue = this.eat(TOKENTYPES.STRING).value;
+      return this.convertStringToCharInitializer(stringValue);
+    } else {
+      this.eat(TOKENTYPES.PUNC, "{");
+      const elems = [];
+      while (!this.match(TOKENTYPES.PUNC, "}")) {
+        if (elems.length > 0) this.eat(TOKENTYPES.PUNC, ",");
+        elems.push(this.parseExpr());
+      }
+      this.eat(TOKENTYPES.PUNC, "}");
+      return elems;
     }
-    this.eat(TOKENTYPES.PUNC, "}");
+  }
+
+  /**
+   * Converts a string literal into char initializer expressions
+   * 
+   * Example:
+   * "Hi" 
+   * [
+   *  { kind: "num", value: 72 },
+   *  { kind: "num", value: 105 },
+   *  { kind: "num", value: 0 } (For null terminator)
+   * ]
+   * 
+   * @param {string} value - String literal value without quotes
+   * @returns {ExpressionNode[]} Character code nodes ending with '\0'
+   */
+  convertStringToCharInitializer(value) {
+    const elems = [];
+
+    for (const char of value) {
+      elems.push({
+        kind: "num", 
+        value: char.charCodeAt(0), 
+      });
+    }
+
+    elems.push({ kind: "num", value: 0 });
     return elems;
   }
 

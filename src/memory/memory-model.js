@@ -177,6 +177,7 @@ class MemoryModel {
     this.nextHeapAddr = 0x4000;
     this.nextGlobalAddr = 0x1000;
     this.nextStackBase = 0x7ff0;
+    this.nextStringLiteralId = 0;
   }
 
   /**
@@ -191,6 +192,71 @@ class MemoryModel {
     this.nextHeapAddr = 0x4000;
     this.nextGlobalAddr = 0x1000;
     this.nextStackBase = 0x7ff0;
+    this.nextStringLiteralId = 0;
+  }
+
+  /**
+   * Stores a string literal in simulated global/static memory.
+   *
+   * Example:
+   * "Hi" becomes ['H', 'i', '\0'] in memory.
+   *
+   * @param {string} value - String literal value without quotes
+   * @returns {number} Address of the first character
+   */
+  addStringLiteral(value) {
+    const chars = [];
+
+    for (const char of value) {
+      chars.push(char.charCodeAt(0));
+    }
+
+    chars.push(0);
+
+    const name = `__str_lit_${this.nextStringLiteralId++}`;
+    const type = { base: "char", pointer: 0 };
+    const size = chars.length;
+    const addr = this.nextGlobalAddr;
+
+    this.nextGlobalAddr += size + ((4 - (size % 4)) % 4);
+
+    this.globals.set(name, {
+      type,
+      addr,
+      isArray: true,
+      size,
+      values: chars,
+      elemType: type,
+      isStringLiteral: true,
+    });
+
+    return addr;
+  }
+
+  /**
+  * Reads a null-terminated C string from simulated memory.
+  *
+  * Starts at addr and keeps reading chars until it sees 0.
+  *
+  * @param {number} addr - Address of the first character
+  * @returns {string} Decoded string
+  */
+  readCString(addr) {
+    let output = "";
+    let currentAddr = addr;
+
+    for (let i = 0; i < 1000; i++) {
+      const resolved = this.resolveAddress(currentAddr);
+      if (!resolved) break;
+
+      const value = this.deref(currentAddr);
+      if (value === 0) break;
+
+      output += String.fromCharCode(value);
+      currentAddr += 1;
+    }
+
+    return output;
   }
 
   /**

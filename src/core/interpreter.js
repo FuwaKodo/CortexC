@@ -488,15 +488,23 @@ class Interpreter {
         break;
       }
       case "printf": {
-        const vals = stmt.args.map((a) => this.evalExpr(a));
-        let out = stmt.fmt,
-          vi = 0;
-        out = out.replace(/%[difs%]/g, (m) => {
-          if (m === "%%") return "%";
-          if (vi < vals.length) return String(vals[vi++]);
-          return m;
+        const vals = stmt.args.map((arg) => this.evalExpr(arg));
+
+        let valueIndex = 0;
+
+        const output = stmt.fmt.replace(/%[difsc%]/g, (match) => {
+          if (match === "%%") return "%";
+          if (valueIndex >= vals.length) return match;
+
+          const value = vals[valueIndex++];
+
+          if (match === "%s") return this.mem.readCString(value);
+          if (match === "%c") return String.fromCharCode(value);
+
+          return String(value);
         });
-        this.onOutput(out);
+
+        this.onOutput(output);
         break;
       }
       case "free": {
@@ -539,7 +547,7 @@ class Interpreter {
       case "num":
         return node.value;
       case "str":
-        return node.value;
+        return this.mem.addStringLiteral(node.value);
       case "var": {
         const v = this.mem.getVar(node.name);
         if (!v) this.crash(`Undefined variable '${node.name}'.`);

@@ -31,8 +31,17 @@
  * @typedef {Object} CallFrame
  * @property {FunctionNode} func - Function currently executing
  * @property {number} pc - Program counter/index of the next statement to execute
+ * @property {ExecutionBlock[]} blockStack - Active nested statement blocks
  * @property {Array<*>} savedCallResults - Caller expression function-call results
  * @property {number} savedCallIndex - Caller expression function-call result index
+ */
+
+/**
+ * Represents one nested block currently being executed.
+ *
+ * @typedef {Object} ExecutionBlock
+ * @property {StmtNode[]} statements - Statements belonging to the block
+ * @property {number} pc - Index of the next statement inside the block
  */
 
 /**
@@ -285,11 +294,33 @@ class Interpreter {
     this.callStack.push({
       func,
       pc: 0,
+      blockStack: [],
       savedCallResults: this.callResults,
       savedCallIndex: this.callIndex,
     });
     this.callResults = [];
     this.callIndex = 0;
+  }
+
+  /**
+   * Removes nested blocks that have finished executing.
+   *
+   * Once a block is removed, execution continues in its parent block
+   * or in the top-level function body.
+   *
+   * @param {CallFrame} ctx - Function call frame being executed
+   * @returns {void}
+   */
+  discardCompletedBlocks(ctx) {
+    while (ctx.blockStack.length > 0) {
+      const block = ctx.blockStack[ctx.blockStack.length - 1];
+
+      if (block.pc < block.statements.length) {
+        break;
+      }
+
+      ctx.blockStack.pop();
+    }
   }
 
   /**
@@ -311,38 +342,83 @@ class Interpreter {
     }
 
     const ctx = this.callStack[this.callStack.length - 1];
-    if (ctx.pc >= ctx.func.body.length) {
+    this.discardCompletedBlocks(ctx);
+
+    const functionFinished =
+      ctx.blockStack.length === 0 &&
+      ctx.pc >= ctx.func.body.length;
+
+    if (functionFinished) {
       this.doReturn(0);
       return !this.finished;
     }
 
-    const stmt = ctx.func.body[ctx.pc];
+    const activeBlock =
+      ctx.blockStack.length > 0
+        ? ctx.blockStack[ctx.blockStack.length - 1]
+        : null;
+
+    const stmt = activeBlock
+      ? activeBlock.statements[activeBlock.pc]
+      : ctx.func.body[ctx.pc];
+
     this.currentLine = stmt.line;
     this.stepCount++;
     this.callIndex = 0;
     const depthBefore = this.callStack.length;
 
     try {
-      ctx.pc++;
+      if (activeBlock) {
+        activeBlock.pc++;
+      } else {
+        ctx.pc++;
+      }
+
       this.execStmt(stmt);
-    } catch (e) {
-      if (e instanceof CallPending) {
-        ctx.pc--;
+    } catch (error) {
+      if (error instanceof CallPending) {
+        if (activeBlock) {
+          activeBlock.pc--;
+        } else {
+          ctx.pc--;
+        }
+
         return true;
       }
-      const message = e instanceof Error ? e.message : String(e);
-      const line = e instanceof RuntimeCrash ? e.line : this.currentLine;
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      const line =
+        error instanceof RuntimeCrash
+          ? error.line
+          : this.currentLine;
+
       this.currentLine = line ?? this.currentLine;
       this.onCrash(message, line ?? null);
       this.finished = true;
       return false;
     }
 
-    if (this.callStack.length >= depthBefore) this.callResults = [];
+    if (this.callStack.length >= depthBefore) {
+      this.callResults = [];
+    }
 
     if (this.callStack.length > 0) {
       const top = this.callStack[this.callStack.length - 1];
-      if (top.pc >= top.func.body.length && top.func.name === "main") this.doReturn(0);
+
+      this.discardCompletedBlocks(top);
+
+      const mainFinished =
+        top.func.name === "main" &&
+        top.blockStack.length === 0 &&
+        top.pc >= top.func.body.length;
+
+      if (mainFinished) {
+        this.doReturn(0);
+      }
     }
 
     return !this.finished;
@@ -383,6 +459,25 @@ class Interpreter {
    */
   execStmt(stmt) {
     switch (stmt.kind) {
+      case "if": {
+        const condition = this.evalExpr(stmt.condition);
+
+        const selectedBranch =
+          condition !== 0
+            ? stmt.thenBranch
+            : stmt.elseBranch;
+
+        if (selectedBranch && selectedBranch.length > 0) {
+          const ctx = this.callStack[this.callStack.length - 1];
+
+          ctx.blockStack.push({
+            statements: selectedBranch,
+            pc: 0,
+          });
+        }
+
+        break;
+      }
       case "local_decl": {
         if (stmt.isArray) {
           const initVals = stmt.arrayInit ? stmt.arrayInit.map((e) => this.evalExpr(e)) : null;
@@ -555,25 +650,48 @@ class Interpreter {
         return v.value;
       }
       case "binop": {
-        const l = this.evalExpr(node.left),
-          r = this.evalExpr(node.right);
-        if ((node.op === "/" || node.op === "%") && r === 0) this.crash("Division by zero.");
+        const left = this.evalExpr(node.left);
+
+        if (node.op === "&&") {
+          if (left === 0) {
+            return 0;
+          }
+
+          return this.evalExpr(node.right) !== 0 ? 1 : 0;
+        }
+
+        if (node.op === "||") {
+          if (left !== 0) {
+            return 1;
+          }
+
+          return this.evalExpr(node.right) !== 0 ? 1 : 0;
+        }
+
+        const right = this.evalExpr(node.right);
+
+        if (
+          (node.op === "/" || node.op === "%") &&
+          right === 0
+        ) {
+          this.crash("Division by zero.");
+        }
+
         const ops = {
           "+": (a, b) => a + b,
           "-": (a, b) => a - b,
           "*": (a, b) => a * b,
-          "/": (a, b) => (b !== 0 ? Math.trunc(a / b) : 0),
-          "%": (a, b) => (b !== 0 ? a % b : 0),
+          "/": (a, b) => Math.trunc(a / b),
+          "%": (a, b) => a % b,
           "==": (a, b) => (a === b ? 1 : 0),
           "!=": (a, b) => (a !== b ? 1 : 0),
           "<": (a, b) => (a < b ? 1 : 0),
           ">": (a, b) => (a > b ? 1 : 0),
           "<=": (a, b) => (a <= b ? 1 : 0),
           ">=": (a, b) => (a >= b ? 1 : 0),
-          "&&": (a, b) => (a && b ? 1 : 0),
-          "||": (a, b) => (a || b ? 1 : 0),
         };
-        return (ops[node.op] || (() => 0))(l, r);
+
+        return (ops[node.op] || (() => 0))(left, right);
       }
       case "negate":
         return -this.evalExpr(node.expr);

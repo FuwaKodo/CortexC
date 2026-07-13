@@ -54,10 +54,27 @@
  * - "compound_assign": compound assignment, such as x += 1;
  * - "unary_stmt": unary update statement, such as x++ or x--;
  * - "expr_stmt": expression used as a statement, usually a function call.
+ * - "if": conditional statement with an optional else branch
  *
  * @typedef {Object} StatementNode
- * @property {"local_decl" | "return" | "printf" | "free" | "deref_assign" | "deref_compound_assign" | "array_assign" | "assign" | "compound_assign" | "unary_stmt" | "expr_stmt"} kind - Statement kind
+ * @property {
+ *  "local_decl" | 
+ *  "return" | 
+ *  "printf" | 
+ *  "free" | 
+ *  "deref_assign" | 
+ *  "deref_compound_assign" | 
+ *  "array_assign" | 
+ *  "assign" | 
+ *  "compound_assign" | 
+ *  "unary_stmt" | 
+ *  "expr_stmt | 
+ *  if"
+ * } kind - Statement kind
  * @property {number} line - Source line where the statement starts
+ * @property {ExpressionNode} [condition] - Condition used by an if statement
+ * @property {StatementNode[]} [thenBranch] - Statements executed when the condition is true
+ * @property {StatementNode[] | null} [elseBranch] - Statements executed when the condition is false
  */
 
 /**
@@ -203,6 +220,55 @@ class Parser {
   }
 
   /**
+   * Parses an if statement with an optional else or else-if branch
+   * 
+   * @param {number} startLine - Source line wher the if statement starts
+   * @param {StatementNode} Parsed if statement
+  */
+  parseIf(startLine) {
+    this.eat(TOKENTYPES.KEYWORD, "if");
+    this.eat(TOKENTYPES.PUNC, "(");
+
+    const condition = this.parseExpr();
+
+    this.eat(TOKENTYPES.PUNC, ")");
+
+    const thenBranch = this.parseStatementBody();
+    let elseBranch = null;
+
+    if (this.match(TOKENTYPES.KEYWORD, "else")) {
+      this.eat(TOKENTYPES.KEYWORD, "else");
+
+      if (this.match(TOKENTYPES.KEYWORD, "if")) {
+        elseBranch = [this.parseIf(this.at().line)];
+      } else {
+        elseBranch = this.parseStatementBody();
+      }
+    }
+
+    return {
+      kind: "if",
+      condition,
+      thenBranch,
+      elseBranch,
+      line: startLine,
+    };
+  }
+
+  /**
+   * Parses the body controlled by an if or else statement
+   * 
+   * @returns {StatementNode[]} Parsed statements
+   */
+  parseStatementBody() {
+    if (this.match(TOKENTYPES.PUNC, "{")) {
+      return this.parseBlock(); 
+    }
+
+    return [this.parseStmt()]; 
+  }
+
+  /**
    * Checks whether the current token can start a C type.
    *
    * @returns {boolean} True if the current token starts a type
@@ -338,6 +404,10 @@ class Parser {
    */
   parseStmt() {
     const startLine = this.at().line;
+
+    if (this.match(TOKENTYPES.KEYWORD, "if")) {
+      return this.parseIf(startLine);
+    }
 
     if (this.match(TOKENTYPES.KEYWORD, "return")) {
       this.eat();

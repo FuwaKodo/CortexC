@@ -650,25 +650,48 @@ class Interpreter {
         return v.value;
       }
       case "binop": {
-        const l = this.evalExpr(node.left),
-          r = this.evalExpr(node.right);
-        if ((node.op === "/" || node.op === "%") && r === 0) this.crash("Division by zero.");
+        const left = this.evalExpr(node.left);
+
+        if (node.op === "&&") {
+          if (left === 0) {
+            return 0;
+          }
+
+          return this.evalExpr(node.right) !== 0 ? 1 : 0;
+        }
+
+        if (node.op === "||") {
+          if (left !== 0) {
+            return 1;
+          }
+
+          return this.evalExpr(node.right) !== 0 ? 1 : 0;
+        }
+
+        const right = this.evalExpr(node.right);
+
+        if (
+          (node.op === "/" || node.op === "%") &&
+          right === 0
+        ) {
+          this.crash("Division by zero.");
+        }
+
         const ops = {
           "+": (a, b) => a + b,
           "-": (a, b) => a - b,
           "*": (a, b) => a * b,
-          "/": (a, b) => (b !== 0 ? Math.trunc(a / b) : 0),
-          "%": (a, b) => (b !== 0 ? a % b : 0),
+          "/": (a, b) => Math.trunc(a / b),
+          "%": (a, b) => a % b,
           "==": (a, b) => (a === b ? 1 : 0),
           "!=": (a, b) => (a !== b ? 1 : 0),
           "<": (a, b) => (a < b ? 1 : 0),
           ">": (a, b) => (a > b ? 1 : 0),
           "<=": (a, b) => (a <= b ? 1 : 0),
           ">=": (a, b) => (a >= b ? 1 : 0),
-          "&&": (a, b) => (a && b ? 1 : 0),
-          "||": (a, b) => (a || b ? 1 : 0),
         };
-        return (ops[node.op] || (() => 0))(l, r);
+
+        return (ops[node.op] || (() => 0))(left, right);
       }
       case "negate":
         return -this.evalExpr(node.expr);

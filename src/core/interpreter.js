@@ -459,6 +459,73 @@ class Interpreter {
    */
   execStmt(stmt) {
     switch (stmt.kind) {
+      case "while": {
+        const condition = this.evalExpr(stmt.condition);
+
+        if (condition === 0) {
+          break;
+        }
+
+        const ctx =
+          this.callStack[this.callStack.length - 1];
+
+        const activeBlock =
+          ctx.blockStack[ctx.blockStack.length - 1];
+
+        const repeatingCurrentLoop =
+          activeBlock?.kind === "while" &&
+          activeBlock.loop === stmt;
+
+        if (repeatingCurrentLoop) {
+          activeBlock.pc = 0;
+        } else {
+          ctx.blockStack.push({
+            kind: "while",
+            loop: stmt,
+            statements: [
+              ...stmt.body,
+              stmt,
+            ],
+            pc: 0,
+          });
+        }
+
+        break;
+      }
+      case "for": {
+        const condition =
+        stmt.condition ??
+        {
+          kind: "num",
+          value: 1,
+        };
+
+      const loopBody = stmt.update
+        ? [...stmt.body, stmt.update]
+        : [...stmt.body];
+
+      const loop = {
+        kind: "while",
+        condition,
+        body: loopBody,
+        line: stmt.line,
+      };
+
+      if (stmt.initializer) {
+        this.execStmt(stmt.initializer);
+      }
+
+      const ctx =
+        this.callStack[this.callStack.length - 1];
+
+      ctx.blockStack.push({
+        kind: "block",
+        statements: [loop],
+        pc: 0,
+      });
+
+      break;
+      }
       case "if": {
         const condition = this.evalExpr(stmt.condition);
 

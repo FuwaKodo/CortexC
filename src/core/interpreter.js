@@ -324,6 +324,27 @@ class Interpreter {
   }
 
   /**
+   * Returns the next statement that would execute in a call frame.
+   *
+   * @param {CallFrame} ctx - Call frame to inspect
+   * @returns {StmtNode | null} Next statement, or null if complete
+   */
+  getNextStatement(ctx) {
+    this.discardCompletedBlocks(ctx);
+
+    const activeBlock =
+      ctx.blockStack.length > 0
+        ? ctx.blockStack[ctx.blockStack.length - 1]
+        : null;
+
+    if (activeBlock) {
+      return activeBlock.statements[activeBlock.pc] ?? null;
+    }
+
+    return ctx.func.body[ctx.pc] ?? null;
+  }
+
+  /**
    * Executes one interpreter step.
    *
    * A step usually executes one statement from the current function body.
@@ -335,6 +356,48 @@ class Interpreter {
    * @returns {boolean} `true` if execution can continue, `false` if execution finished or crashed
    */
   step() {
+    if (this.finished) return false;
+    if (this.callStack.length === 0) {
+      this.finished = true;
+      return false;
+    }
+
+    const startingFrame = this.callStack[this.callStack.length - 1];
+    const executedStmt =this.getNextStatement(startingFrame);
+    const canContinue = this.stepOnce(true);
+
+    if (!canContinue || this.finished) {
+      return canContinue;
+    }
+
+    const currentFrame = this.callStack[this.callStack.length - 1];
+    if (currentFrame !== startingFrame) {
+      return !this.finished;
+    }
+
+    const completedForHeaderPart =
+      executedStmt?.kind === "for" ||
+      executedStmt?.autoRunForConditionAfter === true;
+
+    if (!completedForHeaderPart) {
+      return !this.finished;
+    }
+
+    const nextStmt = this.getNextStatement(startingFrame);
+    if (nextStmt?.syntheticForCondition === true) {
+      this.stepOnce(false);
+    }
+
+    return !this.finished;
+  }
+
+  /**
+ * Executes exactly one AST statement.
+ *
+ * @param {boolean} countVisibleStep - Whether to increment stepCount
+ * @returns {boolean} True if execution can continue
+ */
+  stepOnce(countVisibleStep = true) {
     if (this.finished) return false;
     if (this.callStack.length === 0) {
       this.finished = true;
@@ -363,7 +426,11 @@ class Interpreter {
       : ctx.func.body[ctx.pc];
 
     this.currentLine = stmt.line;
-    this.stepCount++;
+
+    if (countVisibleStep) {
+      this.stepCount++;
+    }
+
     this.callIndex = 0;
     const depthBefore = this.callStack.length;
 
@@ -459,6 +526,81 @@ class Interpreter {
    */
   execStmt(stmt) {
     switch (stmt.kind) {
+      case "while": {
+        const condition = this.evalExpr(stmt.condition);
+
+        if (condition === 0) {
+          break;
+        }
+
+        const ctx =
+          this.callStack[this.callStack.length - 1];
+
+        const activeBlock =
+          ctx.blockStack[ctx.blockStack.length - 1];
+
+        const repeatingCurrentLoop =
+          activeBlock?.kind === "while" &&
+          activeBlock.loop === stmt;
+
+        if (repeatingCurrentLoop) {
+          activeBlock.pc = 0;
+        } else {
+          ctx.blockStack.push({
+            kind: "while",
+            loop: stmt,
+            statements: [
+              ...stmt.body,
+              stmt,
+            ],
+            pc: 0,
+          });
+        }
+
+        break;
+      }
+      case "for": {
+        const condition =
+          stmt.condition ??
+          {
+            kind: "num",
+            value: 1,
+          };
+
+        const update = stmt.update
+          ? {
+              ...stmt.update,
+              autoRunForConditionAfter: true,
+            }
+          : null;
+
+        const loopBody = update
+          ? [...stmt.body, update]
+          : [...stmt.body];
+
+        const loop = {
+          kind: "while",
+          condition,
+          body: loopBody,
+          line: stmt.line,
+          syntheticForCondition: true,
+        };
+
+        if (stmt.initializer) {
+          this.execStmt(stmt.initializer);
+        }
+
+        const ctx =
+          this.callStack[this.callStack.length - 1];
+
+        ctx.blockStack.push({
+          kind: "block",
+          statements: [loop],
+          pc: 0,
+        });
+
+        break;
+      }
       case "if": {
         const condition = this.evalExpr(stmt.condition);
 

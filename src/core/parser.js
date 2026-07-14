@@ -409,6 +409,14 @@ class Parser {
       return this.parseIf(startLine);
     }
 
+    if (this.match(TOKENTYPES.KEYWORD, "while")) {
+      return this.parseWhile(startLine);
+    }
+
+    if (this.match(TOKENTYPES.KEYWORD, "for")) {
+      return this.parseFor(startLine);
+    }
+
     if (this.match(TOKENTYPES.KEYWORD, "return")) {
       this.eat();
       let value = null;
@@ -430,22 +438,58 @@ class Parser {
 
     if (this.isTypeStart()) return this.parseLocalDecl(startLine);
 
+    return this.parseSimpleStatement(startLine, ";");
+  }
+
+  /**
+   * Parses a simple statement.
+   *
+   * Simple statements:
+   * - pointer dereference assignments: *ptr = 5
+   * - pointer compound assignments: *ptr += 1
+   * - array element assignments: arr[0] = 5
+   * - variable assignments: x = 5
+   * - compound assignments: x += 1
+   * - increment and decrement statements: x++ or x--
+   * - function-call statements: foo()
+   *
+   * @param {number} startLine - Source line where the statement starts
+   * @param {string} terminator - Punctuation that ends the statement
+   * @returns {StatementNode} Parsed simple statement
+ */
+  parseSimpleStatement(startLine, terminator = ";") {
+    // Pointer dereference statements:
     if (this.match(TOKENTYPES.OP, "*")) {
-      this.eat();
+      this.eat(TOKENTYPES.OP, "*");
+
       const target = this.eat(TOKENTYPES.IDENT).value;
 
       if (this.match(TOKENTYPES.OP, "=")) {
         this.eat(TOKENTYPES.OP, "=");
+
         const value = this.parseExpr();
-        this.eat(TOKENTYPES.PUNC, ";");
-        return { kind: "deref_assign", target, value, line: startLine };
+
+        this.eat(TOKENTYPES.PUNC, terminator);
+
+        return {
+          kind: "deref_assign",
+          target,
+          value,
+          line: startLine,
+        };
       }
-      
-      // Support dereference compound statements
-      if (this.matchAny(TOKENTYPES.OP, ["+=", "-=", "*=", "/="])) {
+
+      if (
+        this.matchAny(
+          TOKENTYPES.OP,
+          ["+=", "-=", "*=", "/="],
+        )
+      ) {
         const op = this.eat().value;
         const value = this.parseExpr();
-        this.eat(TOKENTYPES.PUNC, ";");
+
+        this.eat(TOKENTYPES.PUNC, terminator);
+
         return {
           kind: "deref_compound_assign",
           target,
@@ -454,57 +498,188 @@ class Parser {
           line: startLine,
         };
       }
+
+      this.err(
+        `Expected an assignment operator after '*${target}'`,
+      );
     }
 
-    if (this.match(TOKENTYPES.IDENT)) {
-      const name = this.eat(TOKENTYPES.IDENT).value;
-
-      if (this.match(TOKENTYPES.PUNC, "[")) {
-        this.eat();
-        const index = this.parseExpr();
-        this.eat(TOKENTYPES.PUNC, "]");
-        this.eat(TOKENTYPES.OP, "=");
-        const value = this.parseExpr();
-        this.eat(TOKENTYPES.PUNC, ";");
-        return { kind: "array_assign", name, index, value, line: startLine };
-      }
-
-      if (this.match(TOKENTYPES.OP, "=")) {
-        this.eat();
-        const value = this.parseExpr();
-        this.eat(TOKENTYPES.PUNC, ";");
-        return { kind: "assign", name, value, line: startLine };
-      }
-
-      if (
-        this.match(TOKENTYPES.OP, "+=") ||
-        this.match(TOKENTYPES.OP, "-=") ||
-        this.match(TOKENTYPES.OP, "*=") ||
-        this.match(TOKENTYPES.OP, "/=")
-      ) {
-        const op = this.eat().value;
-        const value = this.parseExpr();
-        this.eat(TOKENTYPES.PUNC, ";");
-        return { kind: "compound_assign", name, op, value, line: startLine };
-      }
-
-      if (this.match(TOKENTYPES.OP, "++") || this.match(TOKENTYPES.OP, "--")) {
-        const op = this.eat().value;
-        this.eat(TOKENTYPES.PUNC, ";");
-        return { kind: "unary_stmt", name, op, line: startLine };
-      }
-
-      if (this.match(TOKENTYPES.PUNC, "(")) {
-        this.pos--;
-        const expr = this.parseExpr();
-        this.eat(TOKENTYPES.PUNC, ";");
-        return { kind: "expr_stmt", expr, line: startLine };
-      }
-
-      this.err(`Unexpected token after identifier '${name}'`);
+    if (!this.match(TOKENTYPES.IDENT)) {
+      this.err(`Unexpected token: ${this.at().value}`);
     }
 
-    this.err(`Unexpected token: ${this.at().value}`);
+    const name = this.eat(TOKENTYPES.IDENT).value;
+
+    // Array element assign
+    if (this.match(TOKENTYPES.PUNC, "[")) {
+      this.eat(TOKENTYPES.PUNC, "[");
+
+      const index = this.parseExpr();
+
+      this.eat(TOKENTYPES.PUNC, "]");
+      this.eat(TOKENTYPES.OP, "=");
+
+      const value = this.parseExpr();
+
+      this.eat(TOKENTYPES.PUNC, terminator);
+
+      return {
+        kind: "array_assign",
+        name,
+        index,
+        value,
+        line: startLine,
+      };
+    }
+
+    // Ordinary assignment
+    if (this.match(TOKENTYPES.OP, "=")) {
+      this.eat(TOKENTYPES.OP, "=");
+
+      const value = this.parseExpr();
+
+      this.eat(TOKENTYPES.PUNC, terminator);
+
+      return {
+        kind: "assign",
+        name,
+        value,
+        line: startLine,
+      };
+    }
+
+    // Compound assignment
+    if (
+      this.matchAny(
+        TOKENTYPES.OP,
+        ["+=", "-=", "*=", "/="],
+      )
+    ) {
+      const op = this.eat().value;
+      const value = this.parseExpr();
+
+      this.eat(TOKENTYPES.PUNC, terminator);
+
+      return {
+        kind: "compound_assign",
+        name,
+        op,
+        value,
+        line: startLine,
+      };
+    }
+
+    // Postfix increment or decrement
+    if (
+      this.matchAny(
+        TOKENTYPES.OP,
+        ["++", "--"],
+      )
+    ) {
+      const op = this.eat().value;
+
+      this.eat(TOKENTYPES.PUNC, terminator);
+
+      return {
+        kind: "unary_stmt",
+        name,
+        op,
+        line: startLine,
+      };
+    }
+
+    // Function call
+    if (this.match(TOKENTYPES.PUNC, "(")) {
+      this.pos--;
+
+      const expr = this.parseExpr();
+
+      this.eat(TOKENTYPES.PUNC, terminator);
+
+      return {
+        kind: "expr_stmt",
+        expr,
+        line: startLine,
+      };
+    }
+
+    this.err(
+      `Unexpected token after identifier '${name}': ${this.at().value}`,
+    );
+  }
+
+  /** 
+   * Parses a while loop.
+   * 
+   * @param {number} startLine - Source line where the loop starts
+   * @returns {StatementNode} Parsed while-loop statement
+   */
+  parseWhile(startLine) {
+    this.eat(TOKENTYPES.KEYWORD, "while");
+    this.eat(TOKENTYPES.PUNC, "(");
+
+    const condition = this.parseExpr();
+
+    this.eat(TOKENTYPES.PUNC, ")");
+
+    return {
+      kind: "while",
+      condition,
+      body: this.parseStatementBody(),
+      line: startLine,
+    };
+  }
+
+/**
+ * Parses a for loop.
+ *
+ * @param {number} startLine - Source line where the loop starts
+ * @returns {StatementNode} Parsed for-loop statement
+ */
+  parseFor(startLine) {
+    this.eat(TOKENTYPES.KEYWORD, "for");
+    this.eat(TOKENTYPES.PUNC, "(");
+
+    let initializer = null;
+
+    if (this.match(TOKENTYPES.PUNC, ";")) {
+      this.eat(TOKENTYPES.PUNC, ";");
+    } else if (this.isTypeStart()) {
+      initializer = this.parseLocalDecl(this.at().line);
+    } else {
+      initializer = this.parseSimpleStatement(
+        this.at().line,
+        ";",
+      );
+    }
+
+    let condition = null;
+
+    if (!this.match(TOKENTYPES.PUNC, ";")) {
+      condition = this.parseExpr();
+    }
+
+    this.eat(TOKENTYPES.PUNC, ";");
+
+    let update = null;
+
+    if (this.match(TOKENTYPES.PUNC, ")")) {
+      this.eat(TOKENTYPES.PUNC, ")");
+    } else {
+      update = this.parseSimpleStatement(
+        this.at().line,
+        ")",
+      );
+    }
+
+    return {
+      kind: "for",
+      initializer,
+      condition,
+      update,
+      body: this.parseStatementBody(),
+      line: startLine,
+    };
   }
 
   /**

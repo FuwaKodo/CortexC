@@ -173,6 +173,7 @@ class MemoryModel {
 
     /** @type  {Map<string, MemoryVariable>} */
     this.globals = new Map();
+    this.staticBindings = new Map();
 
     this.nextHeapAddr = 0x4000;
     this.nextGlobalAddr = 0x1000;
@@ -189,6 +190,7 @@ class MemoryModel {
     this.stack = [];
     this.heap.clear();
     this.globals.clear();
+    this.staticBindings.clear();
     this.nextHeapAddr = 0x4000;
     this.nextGlobalAddr = 0x1000;
     this.nextStackBase = 0x7ff0;
@@ -299,6 +301,24 @@ class MemoryModel {
       });
     }
     return addr;
+  }
+
+  getStatic(functionName, localName) {
+    const globalName = this.staticBindings.get(`${functionName}:${localName}`);
+    return globalName ? this.globals.get(globalName) : null;
+  }
+
+  declareStatic(functionName, localName, declarationLine, type, value, arraySize, arrayInit) {
+    const existing = this.getStatic(functionName, localName);
+    if (existing) return existing;
+
+    const globalName = `__static_${functionName}_${declarationLine}_${localName}`;
+    this.declareGlobal(globalName, type, value, arraySize, arrayInit);
+    const variable = this.globals.get(globalName);
+    variable.displayName = `${functionName}::${localName}`;
+    variable.isStatic = true;
+    this.staticBindings.set(`${functionName}:${localName}`, globalName);
+    return variable;
   }
 
   /**
@@ -417,6 +437,11 @@ class MemoryModel {
         this.stack[i].vars.get(name).value = value;
         return true;
       }
+      const staticVariable = this.getStatic(this.stack[i].name, name);
+      if (staticVariable) {
+        staticVariable.value = value;
+        return true;
+      }
     }
     if (this.globals.has(name)) {
       this.globals.get(name).value = value;
@@ -437,6 +462,8 @@ class MemoryModel {
   getVar(name) {
     for (let i = this.stack.length - 1; i >= 0; i--) {
       if (this.stack[i].vars.has(name)) return this.stack[i].vars.get(name);
+      const staticVariable = this.getStatic(this.stack[i].name, name);
+      if (staticVariable) return staticVariable;
     }
     if (this.globals.has(name)) return this.globals.get(name);
     return null;

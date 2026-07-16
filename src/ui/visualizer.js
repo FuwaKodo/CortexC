@@ -199,9 +199,10 @@ class Visualizer {
 
     let html = "";
     for (const [name, v] of mem.globals) {
+      const displayName = v.displayName || name;
       if (v.isArray) {
         html += `<div class="global-cell" data-base="${v.addr}">`;
-        html += this.renderMemName(`${v.type.base} ${name}[${v.size}]`);
+        html += this.renderMemName(`${v.type.base} ${displayName}[${v.size}]`);
         html += `<span></span><span class="mem-addr">${this.hex(v.addr)}</span></div>`;
         html += `<div class="array-cells">`;
         for (let j = 0; j < v.size; j++) {
@@ -220,9 +221,9 @@ class Visualizer {
         if (allocation && allocation.freed) cellClasses.push("allocation-freed");
 
         html += `<div class="${cellClasses.join(" ")}" data-addr="${v.addr}"${this.allocationStyleAttr(allocation)}>`;
-        html += this.renderMemName(`<span class="mem-type">${typeStr}</span> ${name}`);
+        html += this.renderMemName(`<span class="mem-type">${typeStr}</span> ${displayName}`);
         if (this.isPointer(v.type)) {
-          html += this.renderPointerValue(name, v.value, v.type, ptrClass, allocation);
+          html += this.renderPointerValue(displayName, v.value, v.type, ptrClass, allocation);
         } else {
           html += `<span class="mem-value ${ptrClass}">${this.formatVal(v.value, v.type)}</span>`;
         }

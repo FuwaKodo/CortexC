@@ -298,8 +298,11 @@ class Parser {
    */
   parseType() {
     let base = "";
+    let storageClass = null;
     while (this.matchAny(TOKENTYPES.KEYWORD, ["const", "static", "unsigned", "long", "short"])) {
-      base += this.eat().value + " ";
+      const modifier = this.eat().value;
+      if (modifier === "static") storageClass = "static";
+      base += modifier + " ";
     }
     base += this.eat(TOKENTYPES.KEYWORD).value;
     let pointer = 0;
@@ -307,7 +310,7 @@ class Parser {
       this.eat();
       pointer++;
     }
-    return { base: base.trim(), pointer };
+    return { base: base.trim(), pointer, storageClass };
   }
 
   /**

@@ -630,6 +630,26 @@ class Interpreter {
         break;
       }
       case "local_decl": {
+        const currentFunction = this.callStack[this.callStack.length - 1].func.name;
+        if (stmt.type.storageClass === "static") {
+          if (this.mem.getStatic(currentFunction, stmt.name)) break;
+          const initVals = stmt.isArray
+            ? stmt.arrayInit
+              ? stmt.arrayInit.map((e) => this.evalExpr(e))
+              : null
+            : null;
+          const val = !stmt.isArray && stmt.value !== null ? this.evalExpr(stmt.value) : null;
+          this.mem.declareStatic(
+            currentFunction,
+            stmt.name,
+            stmt.line,
+            stmt.type,
+            val,
+            stmt.arraySize,
+            initVals,
+          );
+          break;
+        }
         if (stmt.isArray) {
           const initVals = stmt.arrayInit ? stmt.arrayInit.map((e) => this.evalExpr(e)) : null;
           this.mem.declareLocal(stmt.name, stmt.type, null, stmt.arraySize, initVals);

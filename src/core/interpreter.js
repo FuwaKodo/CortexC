@@ -283,7 +283,7 @@ class Interpreter {
    * @param {Array<*>} argValues - Evaluated argument values passed to the function
    * @throws {RuntimeCrash} If the function is not defined
    */
-  callFunction(name, argValues) {
+  callFunction(name, argValues, returnTarget = null) {
     const func = this.program.functions[name];
     if (!func) this.crash(`Undefined function '${name}'.`);
     this.mem.pushFrame(name);
@@ -297,6 +297,8 @@ class Interpreter {
       blockStack: [],
       savedCallResults: this.callResults,
       savedCallIndex: this.callIndex,
+      expressionResults: new Map(),
+      returnTarget,
     });
     this.callResults = [];
     this.callIndex = 0;
@@ -473,6 +475,10 @@ class Interpreter {
       this.callResults = [];
     }
 
+    if (this.callStack.includes(ctx)) {
+      ctx.expressionResults.clear();
+    }
+
     if (this.callStack.length > 0) {
       const top = this.callStack[this.callStack.length - 1];
 
@@ -510,7 +516,10 @@ class Interpreter {
     } else {
       this.callResults = entry.savedCallResults;
       this.callResults.push(value);
-      this.callIndex = 0;
+      this.callIndex = entry.savedCallIndex;
+      if (entry.returnTarget) {
+        entry.returnTarget.frame.expressionResults.set(entry.returnTarget.node, value);
+      }
     }
   }
 
@@ -863,11 +872,12 @@ class Interpreter {
         return this.mem.allocHeap(size);
       }
       case "call": {
-        if (this.callIndex < this.callResults.length) return this.callResults[this.callIndex++];
+        const context = this.callStack[this.callStack.length - 1];
+        if (context.expressionResults.has(node)) return context.expressionResults.get(node);
         const func = this.program.functions[node.name];
         if (!func) this.crash(`Undefined function '${node.name}'.`);
         const args = node.args.map((a) => this.evalExpr(a));
-        this.callFunction(node.name, args);
+        this.callFunction(node.name, args, { frame: context, node });
         throw new CallPending();
       }
       case "array_access": {

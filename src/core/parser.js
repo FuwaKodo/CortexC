@@ -461,6 +461,43 @@ class Parser {
    * @returns {StatementNode} Parsed simple statement
  */
   parseSimpleStatement(startLine, terminator = ";") {
+    const checkpoint = this.pos;
+    const parsedTarget = this.parseExpr();
+
+    if (this.matchAny(TOKENTYPES.OP, ["=", "+=", "-=", "*=", "/="])) {
+      const op = this.eat().value;
+      const value = this.parseExpr();
+      this.eat(TOKENTYPES.PUNC, terminator);
+      return {
+        kind: "lvalue_assign",
+        target: parsedTarget,
+        op,
+        value,
+        line: startLine,
+      };
+    }
+
+    if (this.matchAny(TOKENTYPES.OP, ["++", "--"])) {
+      const op = this.eat().value;
+      this.eat(TOKENTYPES.PUNC, terminator);
+      return {
+        kind: "lvalue_update",
+        target: parsedTarget,
+        op,
+        line: startLine,
+      };
+    }
+
+    if (this.match(TOKENTYPES.PUNC, terminator)) {
+      this.eat();
+      return {
+        kind: "expr_stmt",
+        expr: parsedTarget,
+        line: startLine,
+      };
+    }
+
+    this.pos = checkpoint;
     // Pointer dereference statements:
     if (this.match(TOKENTYPES.OP, "*")) {
       this.eat(TOKENTYPES.OP, "*");
@@ -943,22 +980,22 @@ class Parser {
   parseUnary() {
     if (this.match(TOKENTYPES.OP, "&")) {
       this.eat();
-      const name = this.eat(TOKENTYPES.IDENT).value;
-      return { kind: "addr_of", name };
+      const expr = this.parseUnary();
+      return { kind: "addr_of", expr };
     }
     if (this.match(TOKENTYPES.OP, "*")) {
       this.eat();
-      const expr = this.parsePrimary();
+      const expr = this.parseUnary();
       return { kind: "deref", expr };
     }
     if (this.match(TOKENTYPES.OP, "-")) {
       this.eat();
-      const expr = this.parsePrimary();
+      const expr = this.parseUnary();
       return { kind: "negate", expr };
     }
     if (this.match(TOKENTYPES.OP, "!")) {
       this.eat();
-      const expr = this.parsePrimary();
+      const expr = this.parseUnary();
       return { kind: "not", expr };
     }
     return this.parsePrimary();

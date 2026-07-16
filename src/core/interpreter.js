@@ -523,6 +523,116 @@ class Interpreter {
     }
   }
 
+  inferExprType(node) {
+    if (!node) return { base: "int", pointer: 0 };
+    if (node.kind === "var") {
+      const variable = this.mem.getVar(node.name);
+      if (!variable) this.crash(`Undefined variable '${node.name}'.`);
+      return variable.type;
+    }
+    if (node.kind === "deref") {
+      const type = this.inferExprType(node.expr);
+      if (!type || type.pointer <= 0) this.crash("Cannot dereference a non-pointer value.");
+      return { ...type, pointer: type.pointer - 1 };
+    }
+    if (node.kind === "array_access") {
+      const variable = this.mem.getVar(node.name);
+      if (!variable) this.crash(`Undefined variable '${node.name}'.`);
+      if (variable.isArray) return variable.elemType || variable.type;
+      if (variable.type && variable.type.pointer > 0) {
+        return { ...variable.type, pointer: variable.type.pointer - 1 };
+      }
+      this.crash(`'${node.name}' is not an array or pointer.`);
+    }
+    if (node.kind === "addr_of") {
+      const type = this.inferExprType(node.expr || { kind: "var", name: node.name });
+      return { ...type, pointer: type.pointer + 1 };
+    }
+    if (node.kind === "cast") return node.castType;
+    if (node.kind === "call") {
+      const func = this.program.functions[node.name];
+      return func ? func.returnType : { base: "int", pointer: 0 };
+    }
+    if (node.kind === "malloc") return { base: "void", pointer: 1 };
+    return { base: "int", pointer: 0 };
+  }
+
+  resolveLValue(node) {
+    if (node.kind === "var") {
+      const variable = this.mem.getVar(node.name);
+      if (!variable) this.crash(`Undefined variable '${node.name}'.`);
+      return {
+        address: variable.addr,
+        type: variable.type,
+        variable,
+        isAggregate: variable.isArray,
+      };
+    }
+
+    if (node.kind === "deref") {
+      const address = this.evalExpr(node.expr);
+      if (address === 0) this.crash("Null pointer dereference.");
+      const resolved = this.mem.resolveAddress(address);
+      if (!resolved) {
+        this.crash(`Invalid pointer dereference at 0x${address.toString(16).toUpperCase()}.`);
+      }
+      if (resolved.kind === "heap" && resolved.block.freed) {
+        this.crash(`Use after free at 0x${address.toString(16).toUpperCase()}.`);
+      }
+      return {
+        address,
+        type: this.inferExprType(node),
+        variable: resolved.variable,
+        resolved,
+        isAggregate: false,
+      };
+    }
+
+    if (node.kind === "array_access") {
+      const variable = this.mem.getVar(node.name);
+      if (!variable) this.crash(`Undefined variable '${node.name}'.`);
+      const index = this.evalExpr(node.index);
+      if (!Number.isInteger(index)) this.crash(`Array index for '${node.name}' must be an integer.`);
+      if (index < 0) this.crash(`Array index ${index} is out of bounds for '${node.name}'.`);
+
+      const type = this.inferExprType(node);
+      if (variable.isArray && index >= variable.size) {
+        this.crash(`Array index ${index} is out of bounds for '${node.name}'.`);
+      }
+      const base = variable.isArray ? variable.addr : variable.value;
+      if (base === 0) this.crash(`Null pointer dereference through '${node.name}'.`);
+      const address = base + index * getTypeSize(type);
+      const resolved = this.mem.resolveAddress(address);
+      if (!resolved) {
+        this.crash(`Invalid pointer dereference at 0x${address.toString(16).toUpperCase()}.`);
+      }
+      if (resolved.kind === "heap" && resolved.block.freed) {
+        this.crash(`Use after free at 0x${address.toString(16).toUpperCase()}.`);
+      }
+      return {
+        address,
+        type,
+        variable: resolved.variable,
+        resolved,
+        isAggregate: false,
+      };
+    }
+
+    this.crash("Expression is not assignable.");
+  }
+
+  readLValue(target) {
+    if (target.isAggregate) return target.address;
+    return this.mem.deref(target.address);
+  }
+
+  writeLValue(target, value) {
+    if (target.isAggregate) this.crash("Expression is not assignable.");
+    if (!this.mem.setDeref(target.address, value)) {
+      this.crash(`Invalid pointer write at 0x${target.address.toString(16).toUpperCase()}.`);
+    }
+  }
+
   /**
    * Executes one statement AST node.
    *
@@ -535,6 +645,30 @@ class Interpreter {
    */
   execStmt(stmt) {
     switch (stmt.kind) {
+      case "lvalue_assign": {
+        const target = this.resolveLValue(stmt.target);
+        const value = this.evalExpr(stmt.value);
+        if (stmt.op === "=") {
+          this.writeLValue(target, value);
+          break;
+        }
+        const current = this.readLValue(target);
+        if (stmt.op === "/=" && value === 0) this.crash("Division by zero.", stmt.line);
+        const operations = {
+          "+=": (left, right) => left + right,
+          "-=": (left, right) => left - right,
+          "*=": (left, right) => left * right,
+          "/=": (left, right) => Math.trunc(left / right),
+        };
+        this.writeLValue(target, operations[stmt.op](current, value));
+        break;
+      }
+      case "lvalue_update": {
+        const target = this.resolveLValue(stmt.target);
+        const current = this.readLValue(target);
+        this.writeLValue(target, stmt.op === "++" ? current + 1 : current - 1);
+        break;
+      }
       case "while": {
         const condition = this.evalExpr(stmt.condition);
 
@@ -869,19 +1003,10 @@ class Interpreter {
       case "not":
         return this.evalExpr(node.expr) ? 0 : 1;
       case "addr_of": {
-        const v = this.mem.getVar(node.name);
-        if (!v) this.crash(`Undefined variable '${node.name}'.`);
-        return v.addr;
+        return this.resolveLValue(node.expr || { kind: "var", name: node.name }).address;
       }
       case "deref": {
-        const addr = this.evalExpr(node.expr);
-        if (addr === 0) this.crash("Null pointer dereference.");
-        const target = this.mem.resolveAddress(addr);
-        if (!target)
-          this.crash(`Invalid pointer dereference at 0x${addr.toString(16).toUpperCase()}.`);
-        if (target.kind === "heap" && target.block.freed)
-          this.crash(`Use after free at 0x${addr.toString(16).toUpperCase()}.`);
-        return this.mem.deref(addr);
+        return this.readLValue(this.resolveLValue(node));
       }
       case "sizeof":
         return getTypeSize(node.type);
@@ -908,39 +1033,9 @@ class Interpreter {
         // if (idx < 0 || idx >= arrayVar.size)
         //   this.crash(`Array index ${idx} is out of bounds for '${node.name}'.`);
         // return arrayVar.values[idx];
-        const variable = this.mem.getVar(node.name);
-        if (!variable) this.crash(`Undefined variable '${node.name}'.`);
-
-        const idx = this.evalExpr(node.index);
-        if (!Number.isInteger(idx)) this.crash(`Array index for '${node.name}' must be an integer.`);
-        if (idx < 0) this.crash(`Array index ${idx} is out of bounds for '${node.name}'.`);
-        
         // array variable
-        if (variable.isArray) {
-          if (idx >= variable.size) this.crash(`Array index ${idx} is out of bounds for '${node.name}'.`);
-          
-          return variable.values[idx];
-        }
-
         // pointer variable
-        if (variable.type && variable.type.pointer) {
-          const elemType = {
-            base: variable.type.base, 
-            pointer: variable.type.pointer -1
-          };
-
-          const elemSize = getTypeSize(elemType);
-          const addr = variable.value + idx * elemSize; 
-          if (addr === 0) this.crash(`Null pointer dereference through '${node.name}'.`);
-
-          const target = this.mem.resolveAddress(addr);
-          if (!target) this.crash(`Invalid pointer dereference at 0x${addr.toString(16).toUpperCase()}.`);
-          if (target.kind === "heap" && target.block.freed) this.crash(`Use after free at 0x${addr.toString(16).toUpperCase()}.`);
-          
-          return this.mem.deref(addr);
-        }
-
-        this.crash(`'${node.name}' is not an array or pointer.`);
+        return this.readLValue(this.resolveLValue(node));
       }
       default:
         return 0;

@@ -92,6 +92,20 @@ class Visualizer {
       .join("");
   }
 
+  formatType(type) {
+    return type.base + (type.pointer > 0 ? "*".repeat(type.pointer) : "");
+  }
+
+  renderStructFields(variable) {
+    let html = `<div class="array-cells">`;
+    for (const field of variable.structDef.fields) {
+      const storedField = variable.fields[field.name];
+      html += `<div class="array-cell"><span class="array-index">${this.formatType(field.type)} .${field.name} @ ${this.hex(variable.addr + field.offset)}</span><span class="array-val">${this.formatVal(storedField.value, field.type)}</span></div>`;
+    }
+    html += `</div>`;
+    return html;
+  }
+
   renderPointerValue(name, value, type, extraClasses = "", allocation = null) {
     const classes = ["mem-value", "pointer-val", "pointer-source"];
     if (extraClasses) classes.push(extraClasses);
@@ -134,7 +148,12 @@ class Visualizer {
 
       for (const [name, v] of frame.vars) {
         const isNew = this.isNewVar(frame.name, name);
-        if (v.isArray) {
+        if (v.isStruct) {
+          html += `<div class="mem-cell ${isNew ? "new-cell" : ""}" data-base="${v.addr}">`;
+          html += this.renderMemName(`${v.type.base} ${name}`);
+          html += `<span class="size-info">${v.structDef.size} bytes</span><span class="mem-addr">${this.hex(v.addr)}</span></div>`;
+          html += this.renderStructFields(v);
+        } else if (v.isArray) {
           html += `<div class="mem-cell ${isNew ? "new-cell" : ""}" data-base="${v.addr}">`;
           html += this.renderMemName(
             `${v.type.base} ${name}${this.formatArrayDimensions(v)}`,
@@ -222,7 +241,12 @@ class Visualizer {
     let html = "";
     for (const [name, v] of mem.globals) {
       const displayName = v.displayName || name;
-      if (v.isArray) {
+      if (v.isStruct) {
+        html += `<div class="global-cell" data-base="${v.addr}">`;
+        html += this.renderMemName(`${v.type.base} ${displayName}`);
+        html += `<span class="size-info">${v.structDef.size} bytes</span><span class="mem-addr">${this.hex(v.addr)}</span></div>`;
+        html += this.renderStructFields(v);
+      } else if (v.isArray) {
         html += `<div class="global-cell" data-base="${v.addr}">`;
         html += this.renderMemName(
           `${v.type.base} ${displayName}${this.formatArrayDimensions(v)}`,

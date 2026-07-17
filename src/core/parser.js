@@ -371,8 +371,14 @@ class Parser {
     const params = [];
     while (!this.match(TOKENTYPES.PUNC, ")")) {
       if (params.length > 0) this.eat(TOKENTYPES.PUNC, ",");
-      const ptype = this.parseType();
+      let ptype = this.parseType();
       const pname = this.eat(TOKENTYPES.IDENT).value;
+      if (this.match(TOKENTYPES.PUNC, "[")) {
+        this.eat();
+        if (!this.match(TOKENTYPES.PUNC, "]")) this.parseExpr();
+        this.eat(TOKENTYPES.PUNC, "]");
+        ptype = { ...ptype, pointer: ptype.pointer + 1 };
+      }
       params.push({ type: ptype, name: pname });
     }
     this.eat(TOKENTYPES.PUNC, ")");

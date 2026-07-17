@@ -525,6 +525,7 @@ class Interpreter {
 
   inferExprType(node) {
     if (!node) return { base: "int", pointer: 0 };
+    if (node.kind === "str") return { base: "char", pointer: 1 };
     if (node.kind === "var") {
       const variable = this.mem.getVar(node.name);
       if (!variable) this.crash(`Undefined variable '${node.name}'.`);
@@ -554,7 +555,49 @@ class Interpreter {
       return func ? func.returnType : { base: "int", pointer: 0 };
     }
     if (node.kind === "malloc") return { base: "void", pointer: 1 };
+    if (node.kind === "binop") {
+      const pointerInfo = this.getPointerInfo(node);
+      return pointerInfo ? pointerInfo.type : { base: "int", pointer: 0 };
+    }
     return { base: "int", pointer: 0 };
+  }
+
+  getPointerStride(type) {
+    if (!type || type.pointer <= 0) return 1;
+    const stride = getTypeSize({ ...type, pointer: type.pointer - 1 });
+    if (stride <= 0) this.crash("Pointer arithmetic requires a complete pointee type.");
+    return stride;
+  }
+
+  getPointerInfo(node) {
+    if (!node) return null;
+
+    if (node.kind === "var") {
+      const variable = this.mem.getVar(node.name);
+      if (!variable) this.crash(`Undefined variable '${node.name}'.`);
+      if (variable.isArray) {
+        const elementType = variable.elemType || variable.type;
+        return {
+          type: { ...elementType, pointer: elementType.pointer + 1 },
+        };
+      }
+      if (variable.type && variable.type.pointer > 0) {
+        return { type: variable.type };
+      }
+      return null;
+    }
+
+    if (node.kind === "binop") {
+      const left = this.getPointerInfo(node.left);
+      const right = this.getPointerInfo(node.right);
+      if (node.op === "+") return left || right;
+      if (node.op === "-" && left && !right) return left;
+      return null;
+    }
+
+    const type = this.inferExprType(node);
+    if (!type || type.pointer <= 0) return null;
+    return { type };
   }
 
   resolveLValue(node) {
@@ -653,20 +696,31 @@ class Interpreter {
           break;
         }
         const current = this.readLValue(target);
-        if (stmt.op === "/=" && value === 0) this.crash("Division by zero.", stmt.line);
+        let operand = value;
+        if (target.type && target.type.pointer > 0) {
+          if (stmt.op !== "+=" && stmt.op !== "-=") {
+            this.crash(`Invalid pointer compound assignment '${stmt.op}'.`, stmt.line);
+          }
+          operand *= this.getPointerStride(target.type);
+        }
+        if (stmt.op === "/=" && operand === 0) this.crash("Division by zero.", stmt.line);
         const operations = {
           "+=": (left, right) => left + right,
           "-=": (left, right) => left - right,
           "*=": (left, right) => left * right,
           "/=": (left, right) => Math.trunc(left / right),
         };
-        this.writeLValue(target, operations[stmt.op](current, value));
+        this.writeLValue(target, operations[stmt.op](current, operand));
         break;
       }
       case "lvalue_update": {
         const target = this.resolveLValue(stmt.target);
         const current = this.readLValue(target);
-        this.writeLValue(target, stmt.op === "++" ? current + 1 : current - 1);
+        const amount =
+          target.type && target.type.pointer > 0
+            ? this.getPointerStride(target.type)
+            : 1;
+        this.writeLValue(target, stmt.op === "++" ? current + amount : current - amount);
         break;
       }
       case "while": {
@@ -974,6 +1028,34 @@ class Interpreter {
         }
 
         const right = this.evalExpr(node.right);
+        const leftPointer = this.getPointerInfo(node.left);
+        const rightPointer = this.getPointerInfo(node.right);
+
+        if (node.op === "+") {
+          if (leftPointer && rightPointer) this.crash("Cannot add two pointers.");
+          if (leftPointer) return left + right * this.getPointerStride(leftPointer.type);
+          if (rightPointer) return right + left * this.getPointerStride(rightPointer.type);
+        }
+
+        if (node.op === "-") {
+          if (leftPointer && rightPointer) {
+            const leftStride = this.getPointerStride(leftPointer.type);
+            const rightStride = this.getPointerStride(rightPointer.type);
+            if (leftStride !== rightStride) {
+              this.crash("Cannot subtract pointers with different element sizes.");
+            }
+            return Math.trunc((left - right) / leftStride);
+          }
+          if (leftPointer) return left - right * this.getPointerStride(leftPointer.type);
+          if (rightPointer) this.crash("Cannot subtract a pointer from a non-pointer value.");
+        }
+
+        if (
+          (leftPointer || rightPointer) &&
+          !["==", "!=", "<", ">", "<=", ">="].includes(node.op)
+        ) {
+          this.crash(`Invalid pointer arithmetic operator '${node.op}'.`);
+        }
 
         if (
           (node.op === "/" || node.op === "%") &&

@@ -1171,6 +1171,24 @@ class Parser {
     return this.parsePrimary();
   }
 
+  parseMemberAccess(expression) {
+    let result = expression;
+    while (
+      this.match(TOKENTYPES.PUNC, ".") ||
+      this.match(TOKENTYPES.OP, "->")
+    ) {
+      const throughPointer = this.eat().value === "->";
+      const field = this.eat(TOKENTYPES.IDENT).value;
+      result = {
+        kind: "member_access",
+        object: result,
+        field,
+        throughPointer,
+      };
+    }
+    return result;
+  }
+
   /**
    * Parses primary expressions
    *
@@ -1216,7 +1234,7 @@ class Parser {
       }
       const expr = this.parseExpr();
       this.eat(TOKENTYPES.PUNC, ")");
-      return expr;
+      return this.parseMemberAccess(expr);
     }
 
     if (this.match(TOKENTYPES.KEYWORD, "malloc")) {
@@ -1249,20 +1267,7 @@ class Parser {
         }
         expression = { kind: "array_access", name, index: indices[0], indices };
       }
-      while (
-        this.match(TOKENTYPES.PUNC, ".") ||
-        this.match(TOKENTYPES.OP, "->")
-      ) {
-        const throughPointer = this.eat().value === "->";
-        const field = this.eat(TOKENTYPES.IDENT).value;
-        expression = {
-          kind: "member_access",
-          object: expression,
-          field,
-          throughPointer,
-        };
-      }
-      return expression;
+      return this.parseMemberAccess(expression);
     }
 
     this.err(`Unexpected token in expression: ${this.at().type} '${this.at().value}'`);

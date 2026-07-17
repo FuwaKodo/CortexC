@@ -32,6 +32,7 @@ const KEYWORDS = new Set([
   "NULL",
   "const",
   "static",
+  "struct",
 ]);
 
 const OPERATIONS = new Set([

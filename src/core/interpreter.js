@@ -260,6 +260,7 @@ class Interpreter {
       if (g.arrayDimensions) {
         this.mem.getVar(g.name).dimensions = [...g.arrayDimensions];
       }
+      this.initializeStructVariable(this.mem.getVar(g.name), g.type);
     }
   }
 
@@ -294,6 +295,10 @@ class Interpreter {
       const val = i < argValues.length ? argValues[i] : 0;
       const param = func.params[i];
       this.mem.declareLocal(param.name, param.type, val);
+      this.initializeStructVariable(
+        this.mem.getCurrentStackFrame().vars.get(param.name),
+        param.type,
+      );
       if (param.arrayDimensions) {
         this.mem.getCurrentStackFrame().vars.get(param.name).dimensions = [
           ...param.arrayDimensions,
@@ -556,6 +561,9 @@ class Interpreter {
         ? { ...elementType, pointer: elementType.pointer + 1 }
         : elementType;
     }
+    if (node.kind === "member_access") {
+      return this.getStructMember(node).field.type;
+    }
     if (node.kind === "addr_of") {
       const type = this.inferExprType(node.expr || { kind: "var", name: node.name });
       return { ...type, pointer: type.pointer + 1 };
@@ -571,6 +579,41 @@ class Interpreter {
       return pointerInfo ? pointerInfo.type : { base: "int", pointer: 0 };
     }
     return { base: "int", pointer: 0 };
+  }
+
+  getStructDefinition(type) {
+    if (!type || !type.structName) return null;
+    return this.program.structs ? this.program.structs[type.structName] : null;
+  }
+
+  isStructType(type) {
+    return Boolean(type && type.pointer === 0 && this.getStructDefinition(type));
+  }
+
+  initializeStructVariable(variable, type) {
+    const definition = this.getStructDefinition(type);
+    if (variable && definition && type.pointer === 0 && !variable.isArray) {
+      this.mem.initializeStruct(variable, definition);
+    }
+  }
+
+  getStructMember(node) {
+    let objectType = this.inferExprType(node.object);
+    if (node.throughPointer) {
+      if (!objectType || objectType.pointer <= 0) {
+        this.crash(`Operator '->' requires a pointer to a struct.`);
+      }
+      objectType = { ...objectType, pointer: objectType.pointer - 1 };
+    }
+    const definition = this.getStructDefinition(objectType);
+    if (!definition || objectType.pointer > 0) {
+      this.crash(`Member access requires a struct value.`);
+    }
+    const field = definition.fields.find((candidate) => candidate.name === node.field);
+    if (!field) {
+      this.crash(`Struct '${definition.name}' has no member named '${node.field}'.`);
+    }
+    return { definition, field, objectType };
   }
 
   getPointerStride(type) {
@@ -667,7 +710,7 @@ class Interpreter {
         address: variable.addr,
         type: variable.type,
         variable,
-        isAggregate: variable.isArray,
+        isAggregate: variable.isArray || variable.isStruct,
       };
     }
 
@@ -686,7 +729,7 @@ class Interpreter {
         type: this.inferExprType(node),
         variable: resolved.variable,
         resolved,
-        isAggregate: false,
+        isAggregate: this.isStructType(this.inferExprType(node)),
       };
     }
 
@@ -731,6 +774,30 @@ class Interpreter {
         variable: resolved.variable,
         resolved,
         isAggregate: indices.length < dimensions.length,
+      };
+    }
+
+    if (node.kind === "member_access") {
+      const member = this.getStructMember(node);
+      const baseAddress = node.throughPointer
+        ? this.evalExpr(node.object)
+        : this.resolveLValue(node.object).address;
+      if (baseAddress === 0) this.crash("Null struct pointer dereference.");
+      const address = baseAddress + member.field.offset;
+      const resolved = this.mem.resolveAddress(address);
+      if (!resolved) {
+        this.crash(`Invalid struct member address 0x${address.toString(16).toUpperCase()}.`);
+      }
+      if (resolved.kind === "heap" && resolved.block.freed) {
+        this.crash(`Use after free at 0x${address.toString(16).toUpperCase()}.`);
+      }
+      return {
+        address,
+        type: member.field.type,
+        variable: resolved.variable,
+        resolved,
+        isAggregate:
+          Boolean(member.field.arraySize) || this.isStructType(member.field.type),
       };
     }
 
@@ -912,6 +979,7 @@ class Interpreter {
           if (stmt.arrayDimensions) {
             variable.dimensions = [...stmt.arrayDimensions];
           }
+          this.initializeStructVariable(variable, stmt.type);
           break;
         }
         if (stmt.isArray) {
@@ -923,6 +991,7 @@ class Interpreter {
         } else {
           const val = stmt.value !== null ? this.evalExpr(stmt.value) : null;
           this.mem.declareLocal(stmt.name, stmt.type, val);
+          this.initializeStructVariable(this.mem.getVar(stmt.name), stmt.type);
         }
         break;
       }
@@ -1204,6 +1273,8 @@ class Interpreter {
         // pointer variable
         return this.readLValue(this.resolveLValue(node));
       }
+      case "member_access":
+        return this.readLValue(this.resolveLValue(node));
       default:
         return 0;
     }

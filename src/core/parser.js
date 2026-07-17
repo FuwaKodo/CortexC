@@ -111,6 +111,7 @@ class Parser {
   constructor(tokens) {
     this.tokens = tokens;
     this.pos = 0;
+    this.structs = {};
   }
 
   /**
@@ -209,9 +210,19 @@ class Parser {
    * @returns {ProgramNode} Parsed program
    */
   parse() {
-    const program = { globals: [], functions: {} };
+    const program = { globals: [], functions: {}, structs: this.structs };
 
     while (!this.match(TOKENTYPES.EOF)) {
+      if (
+        this.match(TOKENTYPES.KEYWORD, "struct") &&
+        this.peek(1).type === TOKENTYPES.IDENT &&
+        this.peek(2).type === TOKENTYPES.PUNC &&
+        this.peek(2).value === "{"
+      ) {
+        const definition = this.parseStructDefinition();
+        this.structs[definition.name] = definition;
+        continue;
+      }
       const decl = this.parseTopLevel();
       if (decl.kind === "func") program.functions[decl.name] = decl;
       else program.globals.push(decl);
@@ -285,6 +296,7 @@ class Parser {
       "unsigned",
       "const",
       "static",
+      "struct",
     ]);
   }
 
@@ -304,13 +316,93 @@ class Parser {
       if (modifier === "static") storageClass = "static";
       base += modifier + " ";
     }
-    base += this.eat(TOKENTYPES.KEYWORD).value;
+    let structName = null;
+    if (this.match(TOKENTYPES.KEYWORD, "struct")) {
+      this.eat();
+      structName = this.eat(TOKENTYPES.IDENT).value;
+      base += `struct ${structName}`;
+    } else {
+      base += this.eat(TOKENTYPES.KEYWORD).value;
+    }
     let pointer = 0;
     while (this.match(TOKENTYPES.OP, "*")) {
       this.eat();
       pointer++;
     }
-    return { base: base.trim(), pointer, storageClass };
+    const type = { base: base.trim(), pointer, storageClass, structName };
+    if (structName && this.structs[structName]) {
+      type.size = this.structs[structName].size;
+      type.alignment = this.structs[structName].alignment;
+    }
+    return type;
+  }
+
+  getTypeLayout(type) {
+    if (type.pointer > 0) return { size: 8, alignment: 8 };
+    if (type.structName) {
+      const definition = this.structs[type.structName];
+      return definition
+        ? { size: definition.size, alignment: definition.alignment }
+        : { size: 0, alignment: 1 };
+    }
+    const sizes = {
+      char: 1,
+      short: 2,
+      int: 4,
+      float: 4,
+      long: 8,
+      double: 8,
+      void: 0,
+    };
+    const base = type.base.replace(/unsigned |const |static /g, "").trim();
+    const size = sizes[base] || 4;
+    return { size, alignment: Math.min(size, 8) || 1 };
+  }
+
+  parseStructDefinition() {
+    this.eat(TOKENTYPES.KEYWORD, "struct");
+    const name = this.eat(TOKENTYPES.IDENT).value;
+    const definition = { kind: "struct_def", name, fields: [], size: 0, alignment: 1 };
+    this.structs[name] = definition;
+    this.eat(TOKENTYPES.PUNC, "{");
+
+    let offset = 0;
+    let structAlignment = 1;
+    while (!this.match(TOKENTYPES.PUNC, "}")) {
+      const type = this.parseType();
+      const fieldName = this.eat(TOKENTYPES.IDENT).value;
+      const arrayDimensions = this.parseArrayDimensions();
+      this.eat(TOKENTYPES.PUNC, ";");
+      const layout = this.getTypeLayout(type);
+      const arraySize = arrayDimensions.length
+        ? arrayDimensions.reduce((total, size) => total * size, 1)
+        : null;
+      const size = layout.size * (arraySize || 1);
+      offset += (layout.alignment - (offset % layout.alignment)) % layout.alignment;
+      definition.fields.push({
+        name: fieldName,
+        type,
+        offset,
+        size,
+        arrayDimensions: arrayDimensions.length ? arrayDimensions : null,
+        arraySize,
+      });
+      offset += size;
+      structAlignment = Math.max(structAlignment, layout.alignment);
+    }
+
+    this.eat(TOKENTYPES.PUNC, "}");
+    this.eat(TOKENTYPES.PUNC, ";");
+    definition.alignment = structAlignment;
+    definition.size =
+      offset + (structAlignment - (offset % structAlignment)) % structAlignment;
+    for (const field of definition.fields) {
+      if (field.type.structName === name) {
+        field.type.size = definition.size;
+        field.type.alignment = definition.alignment;
+      }
+    }
+    return definition;
   }
 
   parseArrayDimensions(allowExpressions = false) {
@@ -1137,6 +1229,7 @@ class Parser {
 
     if (this.match(TOKENTYPES.IDENT)) {
       const name = this.eat().value;
+      let expression = { kind: "var", name };
       if (this.match(TOKENTYPES.PUNC, "(")) {
         this.eat();
         const args = [];
@@ -1145,18 +1238,31 @@ class Parser {
           args.push(this.parseExpr());
         }
         this.eat(TOKENTYPES.PUNC, ")");
-        return { kind: "call", name, args };
+        expression = { kind: "call", name, args };
       }
-      if (this.match(TOKENTYPES.PUNC, "[")) {
+      if (expression.kind === "var" && this.match(TOKENTYPES.PUNC, "[")) {
         const indices = [];
         while (this.match(TOKENTYPES.PUNC, "[")) {
           this.eat();
           indices.push(this.parseExpr());
           this.eat(TOKENTYPES.PUNC, "]");
         }
-        return { kind: "array_access", name, index: indices[0], indices };
+        expression = { kind: "array_access", name, index: indices[0], indices };
       }
-      return { kind: "var", name };
+      while (
+        this.match(TOKENTYPES.PUNC, ".") ||
+        this.match(TOKENTYPES.OP, "->")
+      ) {
+        const throughPointer = this.eat().value === "->";
+        const field = this.eat(TOKENTYPES.IDENT).value;
+        expression = {
+          kind: "member_access",
+          object: expression,
+          field,
+          throughPointer,
+        };
+      }
+      return expression;
     }
 
     this.err(`Unexpected token in expression: ${this.at().type} '${this.at().value}'`);

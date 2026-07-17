@@ -38,6 +38,10 @@ function getTypeSize(type) {
     return POINTER_SIZE_BYTES;
   }
 
+  if (Number.isFinite(type.size)) {
+    return type.size;
+  }
+
   const baseType = getBaseTypeName(type.base);
   return TYPE_SIZES_BYTES[baseType] || DEFAULT_TYPE_SIZE_BYTES;
 }
@@ -195,6 +199,20 @@ class MemoryModel {
     this.nextGlobalAddr = 0x1000;
     this.nextStackBase = 0x7ff0;
     this.nextStringLiteralId = 0;
+  }
+
+  initializeStruct(variable, definition) {
+    variable.isStruct = true;
+    variable.structName = definition.name;
+    variable.structDef = definition;
+    variable.fields = {};
+    for (const field of definition.fields) {
+      variable.fields[field.name] = {
+        ...field,
+        value: getDefaultValueForType(field.type),
+      };
+    }
+    return variable;
   }
 
   /**
@@ -607,6 +625,20 @@ class MemoryModel {
     }
     for (const frame of this.stack) {
       for (const [name, v] of frame.vars) {
+        if (v.isStruct) {
+          const field = v.structDef.fields.find(
+            (candidate) => v.addr + candidate.offset === addr,
+          );
+          if (field) {
+            return {
+              kind: "stack_struct_field",
+              frame,
+              name,
+              variable: v,
+              field,
+            };
+          }
+        }
         if (!v.isArray && v.addr === addr)
           return { kind: "stack_scalar", frame, name, variable: v };
         if (v.isArray) {
@@ -624,6 +656,14 @@ class MemoryModel {
       }
     }
     for (const [name, v] of this.globals) {
+      if (v.isStruct) {
+        const field = v.structDef.fields.find(
+          (candidate) => v.addr + candidate.offset === addr,
+        );
+        if (field) {
+          return { kind: "global_struct_field", name, variable: v, field };
+        }
+      }
       if (!v.isArray && v.addr === addr) return { kind: "global_scalar", name, variable: v };
       if (v.isArray) {
         const elemSize = getTypeSize(v.elemType || v.type);
@@ -645,6 +685,7 @@ class MemoryModel {
     const resolved = this.resolveAddress(addr);
     if (!resolved) return 0;
     if (resolved.kind === "heap") return resolved.block.values[resolved.index];
+    if (resolved.field) return resolved.variable.fields[resolved.field.name].value;
     if (resolved.kind.endsWith("_array")) return resolved.variable.values[resolved.index];
     return resolved.variable.value;
   }
@@ -662,6 +703,10 @@ class MemoryModel {
     if (resolved.kind === "heap") {
       if (resolved.block.freed) return false;
       resolved.block.values[resolved.index] = value;
+      return true;
+    }
+    if (resolved.field) {
+      resolved.variable.fields[resolved.field.name].value = value;
       return true;
     }
     if (resolved.kind.endsWith("_array")) {

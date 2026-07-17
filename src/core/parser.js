@@ -313,6 +313,78 @@ class Parser {
     return { base: base.trim(), pointer, storageClass };
   }
 
+  parseArrayDimensions(allowExpressions = false) {
+    const dimensions = [];
+    while (this.match(TOKENTYPES.PUNC, "[")) {
+      this.eat();
+      let dimension = null;
+      if (this.match(TOKENTYPES.NUMBER)) {
+        dimension = this.eat().value;
+      } else if (allowExpressions && !this.match(TOKENTYPES.PUNC, "]")) {
+        const expression = this.parseExpr();
+        if (expression.kind === "num") dimension = expression.value;
+      }
+      this.eat(TOKENTYPES.PUNC, "]");
+      dimensions.push(dimension);
+    }
+    return dimensions;
+  }
+
+  flattenArrayInitializer(initializer) {
+    if (!Array.isArray(initializer)) return [initializer];
+    return initializer.flatMap((value) => this.flattenArrayInitializer(value));
+  }
+
+  normalizeArrayInitializer(initializer, dimensions, depth = 0) {
+    if (!initializer) return null;
+    const totalSize = dimensions.slice(depth).reduce((total, size) => total * size, 1);
+    const values = Array.isArray(initializer) ? initializer : [initializer];
+    const hasNestedValues = values.some((value) => Array.isArray(value));
+
+    if (depth === dimensions.length - 1 || !hasNestedValues) {
+      const flattened = this.flattenArrayInitializer(values).slice(0, totalSize);
+      while (flattened.length < totalSize) flattened.push({ kind: "num", value: 0 });
+      return flattened;
+    }
+
+    const normalized = [];
+    const childSize = dimensions
+      .slice(depth + 1)
+      .reduce((total, size) => total * size, 1);
+    for (let i = 0; i < dimensions[depth]; i++) {
+      if (i < values.length) {
+        normalized.push(
+          ...this.normalizeArrayInitializer(values[i], dimensions, depth + 1),
+        );
+      } else {
+        for (let j = 0; j < childSize; j++) {
+          normalized.push({ kind: "num", value: 0 });
+        }
+      }
+    }
+    return normalized;
+  }
+
+  resolveArrayDeclaration(dimensions, initializer) {
+    const resolvedDimensions = [...dimensions];
+    if (resolvedDimensions[0] === null && initializer) {
+      const innerSize = resolvedDimensions
+        .slice(1)
+        .reduce((total, size) => total * size, 1);
+      const topLevelSize = initializer.some((value) => Array.isArray(value))
+        ? initializer.length
+        : Math.ceil(this.flattenArrayInitializer(initializer).length / innerSize);
+      resolvedDimensions[0] = topLevelSize;
+    }
+    const arraySize = resolvedDimensions.includes(null)
+      ? null
+      : resolvedDimensions.reduce((total, size) => total * size, 1);
+    const arrayInit = arraySize
+      ? this.normalizeArrayInitializer(initializer, resolvedDimensions)
+      : initializer;
+    return { arrayDimensions: resolvedDimensions, arraySize, arrayInit };
+  }
+
   /**
    * Parses one top-level declaration.
    *
@@ -325,26 +397,24 @@ class Parser {
 
     if (this.match(TOKENTYPES.PUNC, "(")) return this.parseFuncDef(type, name, startLine);
 
-    let value = null,
-      arraySize = null,
-      arrayInit = null;
+    let value = null;
+    const arrayDimensions = this.parseArrayDimensions();
 
-    if (this.match(TOKENTYPES.PUNC, "[")) {
-      this.eat();
-      if (this.match(TOKENTYPES.NUMBER)) arraySize = this.eat().value;
-      this.eat(TOKENTYPES.PUNC, "]");
+    if (arrayDimensions.length > 0) {
+      let arrayInit = null;
       if (this.match(TOKENTYPES.OP, "=")) {
         this.eat();
         arrayInit = this.parseArrayInit();
       }
-      if (!arraySize && arrayInit) arraySize = arrayInit.length;
+      const layout = this.resolveArrayDeclaration(arrayDimensions, arrayInit);
       this.eat(TOKENTYPES.PUNC, ";");
       return {
         kind: "global_decl",
         type,
         name,
-        arraySize,
-        arrayInit,
+        arraySize: layout.arraySize,
+        arrayDimensions: layout.arrayDimensions,
+        arrayInit: layout.arrayInit,
         line: startLine,
       };
     }
@@ -373,13 +443,15 @@ class Parser {
       if (params.length > 0) this.eat(TOKENTYPES.PUNC, ",");
       let ptype = this.parseType();
       const pname = this.eat(TOKENTYPES.IDENT).value;
-      if (this.match(TOKENTYPES.PUNC, "[")) {
-        this.eat();
-        if (!this.match(TOKENTYPES.PUNC, "]")) this.parseExpr();
-        this.eat(TOKENTYPES.PUNC, "]");
+      const arrayDimensions = this.parseArrayDimensions(true);
+      if (arrayDimensions.length > 0) {
         ptype = { ...ptype, pointer: ptype.pointer + 1 };
       }
-      params.push({ type: ptype, name: pname });
+      params.push({
+        type: ptype,
+        name: pname,
+        arrayDimensions: arrayDimensions.length > 0 ? arrayDimensions : null,
+      });
     }
     this.eat(TOKENTYPES.PUNC, ")");
     const body = this.parseBlock();
@@ -741,25 +813,23 @@ class Parser {
   parseLocalDecl(startLine) {
     const type = this.parseType();
     const name = this.eat(TOKENTYPES.IDENT).value;
+    const arrayDimensions = this.parseArrayDimensions();
 
-    if (this.match(TOKENTYPES.PUNC, "[")) {
-      this.eat();
-      let arraySize = null;
-      if (this.match(TOKENTYPES.NUMBER)) arraySize = this.eat().value;
-      this.eat(TOKENTYPES.PUNC, "]");
+    if (arrayDimensions.length > 0) {
       let arrayInit = null;
       if (this.match(TOKENTYPES.OP, "=")) {
         this.eat();
         arrayInit = this.parseArrayInit();
       }
-      if (!arraySize && arrayInit) arraySize = arrayInit.length;
+      const layout = this.resolveArrayDeclaration(arrayDimensions, arrayInit);
       this.eat(TOKENTYPES.PUNC, ";");
       return {
         kind: "local_decl",
         type,
         name,
-        arraySize,
-        arrayInit,
+        arraySize: layout.arraySize,
+        arrayDimensions: layout.arrayDimensions,
+        arrayInit: layout.arrayInit,
         isArray: true,
         line: startLine,
       };
@@ -801,7 +871,9 @@ class Parser {
       const elems = [];
       while (!this.match(TOKENTYPES.PUNC, "}")) {
         if (elems.length > 0) this.eat(TOKENTYPES.PUNC, ",");
-        elems.push(this.parseExpr());
+        elems.push(
+          this.match(TOKENTYPES.PUNC, "{") ? this.parseArrayInit() : this.parseExpr(),
+        );
       }
       this.eat(TOKENTYPES.PUNC, "}");
       return elems;
@@ -1076,10 +1148,13 @@ class Parser {
         return { kind: "call", name, args };
       }
       if (this.match(TOKENTYPES.PUNC, "[")) {
-        this.eat();
-        const index = this.parseExpr();
-        this.eat(TOKENTYPES.PUNC, "]");
-        return { kind: "array_access", name, index };
+        const indices = [];
+        while (this.match(TOKENTYPES.PUNC, "[")) {
+          this.eat();
+          indices.push(this.parseExpr());
+          this.eat(TOKENTYPES.PUNC, "]");
+        }
+        return { kind: "array_access", name, index: indices[0], indices };
       }
       return { kind: "var", name };
     }

@@ -257,6 +257,9 @@ class Interpreter {
         g.arraySize,
         g.arrayInit ? g.arrayInit.map((e) => this.evalExpr(e)) : null,
       );
+      if (g.arrayDimensions) {
+        this.mem.getVar(g.name).dimensions = [...g.arrayDimensions];
+      }
     }
   }
 
@@ -289,7 +292,13 @@ class Interpreter {
     this.mem.pushFrame(name);
     for (let i = 0; i < func.params.length; i++) {
       const val = i < argValues.length ? argValues[i] : 0;
-      this.mem.declareLocal(func.params[i].name, func.params[i].type, val);
+      const param = func.params[i];
+      this.mem.declareLocal(param.name, param.type, val);
+      if (param.arrayDimensions) {
+        this.mem.getCurrentStackFrame().vars.get(param.name).dimensions = [
+          ...param.arrayDimensions,
+        ];
+      }
     }
     this.callStack.push({
       func,
@@ -539,11 +548,13 @@ class Interpreter {
     if (node.kind === "array_access") {
       const variable = this.mem.getVar(node.name);
       if (!variable) this.crash(`Undefined variable '${node.name}'.`);
-      if (variable.isArray) return variable.elemType || variable.type;
-      if (variable.type && variable.type.pointer > 0) {
-        return { ...variable.type, pointer: variable.type.pointer - 1 };
-      }
-      this.crash(`'${node.name}' is not an array or pointer.`);
+      const dimensions = this.getArrayDimensions(variable);
+      const indices = this.getArrayIndices(node);
+      const elementType = this.getArrayElementType(variable);
+      if (!elementType) this.crash(`'${node.name}' is not an array or pointer.`);
+      return indices.length < dimensions.length
+        ? { ...elementType, pointer: elementType.pointer + 1 }
+        : elementType;
     }
     if (node.kind === "addr_of") {
       const type = this.inferExprType(node.expr || { kind: "var", name: node.name });
@@ -569,6 +580,34 @@ class Interpreter {
     return stride;
   }
 
+  getArrayIndices(node) {
+    return node.indices || [node.index];
+  }
+
+  getArrayDimensions(variable) {
+    if (variable.dimensions) return variable.dimensions;
+    if (variable.isArray) return [variable.size];
+    if (variable.type && variable.type.pointer > 0) return [null];
+    return [];
+  }
+
+  getArrayElementType(variable) {
+    if (variable.isArray) return variable.elemType || variable.type;
+    if (variable.type && variable.type.pointer > 0) {
+      return { ...variable.type, pointer: variable.type.pointer - 1 };
+    }
+    return null;
+  }
+
+  getArrayStride(variable, startDimension) {
+    const dimensions = this.getArrayDimensions(variable);
+    const elementType = this.getArrayElementType(variable);
+    const remainingSize = dimensions
+      .slice(startDimension)
+      .reduce((total, size) => total * (size ?? 1), 1);
+    return getTypeSize(elementType) * remainingSize;
+  }
+
   getPointerInfo(node) {
     if (!node) return null;
 
@@ -579,12 +618,32 @@ class Interpreter {
         const elementType = variable.elemType || variable.type;
         return {
           type: { ...elementType, pointer: elementType.pointer + 1 },
+          stride: this.getArrayStride(variable, 1),
         };
       }
       if (variable.type && variable.type.pointer > 0) {
-        return { type: variable.type };
+        return {
+          type: variable.type,
+          stride: variable.dimensions ? this.getArrayStride(variable, 1) : null,
+        };
       }
       return null;
+    }
+
+    if (node.kind === "array_access") {
+      const variable = this.mem.getVar(node.name);
+      if (!variable) this.crash(`Undefined variable '${node.name}'.`);
+      const type = this.inferExprType(node);
+      if (!type || type.pointer <= 0) return null;
+      const indexCount = this.getArrayIndices(node).length;
+      const dimensions = this.getArrayDimensions(variable);
+      return {
+        type,
+        stride:
+          indexCount < dimensions.length
+            ? this.getArrayStride(variable, indexCount + 1)
+            : null,
+      };
     }
 
     if (node.kind === "binop") {
@@ -634,17 +693,31 @@ class Interpreter {
     if (node.kind === "array_access") {
       const variable = this.mem.getVar(node.name);
       if (!variable) this.crash(`Undefined variable '${node.name}'.`);
-      const index = this.evalExpr(node.index);
-      if (!Number.isInteger(index)) this.crash(`Array index for '${node.name}' must be an integer.`);
-      if (index < 0) this.crash(`Array index ${index} is out of bounds for '${node.name}'.`);
-
-      const type = this.inferExprType(node);
-      if (variable.isArray && index >= variable.size) {
-        this.crash(`Array index ${index} is out of bounds for '${node.name}'.`);
+      const indices = this.getArrayIndices(node);
+      const dimensions = this.getArrayDimensions(variable);
+      const elementType = this.getArrayElementType(variable);
+      if (!elementType) this.crash(`'${node.name}' is not an array or pointer.`);
+      if (indices.length > dimensions.length) {
+        this.crash(`Too many indices for '${node.name}'.`);
       }
+      let flatIndex = 0;
+      for (let i = 0; i < indices.length; i++) {
+        const index = this.evalExpr(indices[i]);
+        if (!Number.isInteger(index)) {
+          this.crash(`Array index for '${node.name}' must be an integer.`);
+        }
+        if (index < 0 || (dimensions[i] !== null && index >= dimensions[i])) {
+          this.crash(`Array index ${index} is out of bounds for '${node.name}'.`);
+        }
+        const stride = dimensions
+          .slice(i + 1)
+          .reduce((total, size) => total * (size ?? 1), 1);
+        flatIndex += index * stride;
+      }
+      const type = this.inferExprType(node);
       const base = variable.isArray ? variable.addr : variable.value;
       if (base === 0) this.crash(`Null pointer dereference through '${node.name}'.`);
-      const address = base + index * getTypeSize(type);
+      const address = base + flatIndex * getTypeSize(elementType);
       const resolved = this.mem.resolveAddress(address);
       if (!resolved) {
         this.crash(`Invalid pointer dereference at 0x${address.toString(16).toUpperCase()}.`);
@@ -657,7 +730,7 @@ class Interpreter {
         type,
         variable: resolved.variable,
         resolved,
-        isAggregate: false,
+        isAggregate: indices.length < dimensions.length,
       };
     }
 
@@ -827,7 +900,7 @@ class Interpreter {
               : null
             : null;
           const val = !stmt.isArray && stmt.value !== null ? this.evalExpr(stmt.value) : null;
-          this.mem.declareStatic(
+          const variable = this.mem.declareStatic(
             currentFunction,
             stmt.name,
             stmt.line,
@@ -836,11 +909,17 @@ class Interpreter {
             stmt.arraySize,
             initVals,
           );
+          if (stmt.arrayDimensions) {
+            variable.dimensions = [...stmt.arrayDimensions];
+          }
           break;
         }
         if (stmt.isArray) {
           const initVals = stmt.arrayInit ? stmt.arrayInit.map((e) => this.evalExpr(e)) : null;
           this.mem.declareLocal(stmt.name, stmt.type, null, stmt.arraySize, initVals);
+          if (stmt.arrayDimensions) {
+            this.mem.getVar(stmt.name).dimensions = [...stmt.arrayDimensions];
+          }
         } else {
           const val = stmt.value !== null ? this.evalExpr(stmt.value) : null;
           this.mem.declareLocal(stmt.name, stmt.type, val);
@@ -1033,20 +1112,26 @@ class Interpreter {
 
         if (node.op === "+") {
           if (leftPointer && rightPointer) this.crash("Cannot add two pointers.");
-          if (leftPointer) return left + right * this.getPointerStride(leftPointer.type);
-          if (rightPointer) return right + left * this.getPointerStride(rightPointer.type);
+          if (leftPointer) {
+            return left + right * (leftPointer.stride ?? this.getPointerStride(leftPointer.type));
+          }
+          if (rightPointer) {
+            return right + left * (rightPointer.stride ?? this.getPointerStride(rightPointer.type));
+          }
         }
 
         if (node.op === "-") {
           if (leftPointer && rightPointer) {
-            const leftStride = this.getPointerStride(leftPointer.type);
-            const rightStride = this.getPointerStride(rightPointer.type);
+            const leftStride = leftPointer.stride ?? this.getPointerStride(leftPointer.type);
+            const rightStride = rightPointer.stride ?? this.getPointerStride(rightPointer.type);
             if (leftStride !== rightStride) {
               this.crash("Cannot subtract pointers with different element sizes.");
             }
             return Math.trunc((left - right) / leftStride);
           }
-          if (leftPointer) return left - right * this.getPointerStride(leftPointer.type);
+          if (leftPointer) {
+            return left - right * (leftPointer.stride ?? this.getPointerStride(leftPointer.type));
+          }
           if (rightPointer) this.crash("Cannot subtract a pointer from a non-pointer value.");
         }
 

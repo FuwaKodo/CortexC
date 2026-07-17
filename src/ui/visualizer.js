@@ -72,6 +72,26 @@ class Visualizer {
     return `<span class="mem-name"><span class="mem-name-label">${labelHtml}</span></span>`;
   }
 
+  formatArrayDimensions(variable) {
+    const dimensions = variable.dimensions || [variable.size];
+    return dimensions.map((size) => `[${size ?? ""}]`).join("");
+  }
+
+  formatArrayIndex(index, variable) {
+    const dimensions = variable.dimensions || [variable.size];
+    let remaining = index;
+    return dimensions
+      .map((size, dimensionIndex) => {
+        const stride = dimensions
+          .slice(dimensionIndex + 1)
+          .reduce((total, value) => total * value, 1);
+        const coordinate = Math.floor(remaining / stride);
+        remaining %= stride;
+        return `[${coordinate}]`;
+      })
+      .join("");
+  }
+
   renderPointerValue(name, value, type, extraClasses = "", allocation = null) {
     const classes = ["mem-value", "pointer-val", "pointer-source"];
     if (extraClasses) classes.push(extraClasses);
@@ -116,11 +136,13 @@ class Visualizer {
         const isNew = this.isNewVar(frame.name, name);
         if (v.isArray) {
           html += `<div class="mem-cell ${isNew ? "new-cell" : ""}" data-base="${v.addr}">`;
-          html += this.renderMemName(`${v.type.base} ${name}[${v.size}]`);
+          html += this.renderMemName(
+            `${v.type.base} ${name}${this.formatArrayDimensions(v)}`,
+          );
           html += `<span></span><span class="mem-addr">${this.hex(v.addr)}</span></div>`;
           html += `<div class="array-cells">`;
           for (let j = 0; j < v.size; j++) {
-            html += `<div class="array-cell"><span class="array-index">[${j}]</span><span class="array-val">${v.values[j]}</span></div>`;
+            html += `<div class="array-cell"><span class="array-index">${this.formatArrayIndex(j, v)}</span><span class="array-val">${v.values[j]}</span></div>`;
           }
           html += `</div>`;
         } else {
@@ -202,11 +224,13 @@ class Visualizer {
       const displayName = v.displayName || name;
       if (v.isArray) {
         html += `<div class="global-cell" data-base="${v.addr}">`;
-        html += this.renderMemName(`${v.type.base} ${displayName}[${v.size}]`);
+        html += this.renderMemName(
+          `${v.type.base} ${displayName}${this.formatArrayDimensions(v)}`,
+        );
         html += `<span></span><span class="mem-addr">${this.hex(v.addr)}</span></div>`;
         html += `<div class="array-cells">`;
         for (let j = 0; j < v.size; j++) {
-          html += `<div class="array-cell"><span class="array-index">[${j}]</span><span class="array-val">${v.values[j]}</span></div>`;
+          html += `<div class="array-cell"><span class="array-index">${this.formatArrayIndex(j, v)}</span><span class="array-val">${v.values[j]}</span></div>`;
         }
         html += `</div>`;
       } else {

@@ -282,7 +282,11 @@ class MemoryModel {
     if (arraySize) {
       const values = [];
       for (let i = 0; i < arraySize; i++) {
-        values.push(arrayInit ? this.evalLiteral(arrayInit[i]) : getDefaultValueForType(type));
+        values.push(
+          arrayInit && i < arrayInit.length
+            ? this.evalLiteral(arrayInit[i])
+            : getDefaultValueForType(type),
+        );
       }
       this.globals.set(name, {
         type,
@@ -400,7 +404,9 @@ class MemoryModel {
     if (arraySize) {
       const values = [];
       for (let i = 0; i < arraySize; i++) {
-        values.push(arrayInit ? arrayInit[i] : getDefaultValueForType(type));
+        values.push(
+          arrayInit && i < arrayInit.length ? arrayInit[i] : getDefaultValueForType(type),
+        );
       }
       frame.vars.set(name, {
         type,

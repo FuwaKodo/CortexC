@@ -114,6 +114,144 @@ class Visualizer {
     return `<span class="${classes.join(" ")}"${this.allocationStyleAttr(allocation)}><span class="pointer-chip-prefix">ptr</span><span class="pointer-chip-value">${this.formatVal(value, type)}</span></span>`;
   }
 
+  variableByteSize(variable) {
+    if (Number.isFinite(variable.byteSize)) return variable.byteSize;
+    if (variable.isArray) {
+      return variable.size * getTypeSize(variable.elemType || variable.type);
+    }
+    return getTypeSize(variable.type);
+  }
+
+  variableAllocatedSize(variable) {
+    const byteSize = this.variableByteSize(variable);
+    if (Number.isFinite(variable.allocatedSize)) return variable.allocatedSize;
+    return byteSize + ((4 - (byteSize % 4)) % 4);
+  }
+
+  variableDeclaration(name, variable) {
+    const dimensions = variable.isArray ? this.formatArrayDimensions(variable) : "";
+    return `<span class="mem-type">${this.formatType(variable.type)}</span> ${name}${dimensions}`;
+  }
+
+  addRowItem(rows, byteOffset, byteSize, item) {
+    const firstRow = Math.floor(byteOffset / 4);
+    const lastRow = Math.floor((byteOffset + Math.max(1, byteSize) - 1) / 4);
+    for (let i = firstRow; i <= lastRow && i < rows.length; i++) {
+      rows[i].items.push({ ...item, continuation: i !== firstRow });
+    }
+  }
+
+  buildVariableRows(name, variable, mem, isNew = false) {
+    const byteSize = this.variableByteSize(variable);
+    const allocatedSize = Math.max(4, this.variableAllocatedSize(variable));
+    const allocation =
+      !variable.isArray &&
+      this.isPointer(variable.type) &&
+      mem.heap.has(variable.value)
+        ? this.allocationMeta(variable.value, mem.heap.get(variable.value).freed)
+        : null;
+    const rows = [];
+
+    for (let offset = 0; offset < allocatedSize; offset += 4) {
+      rows.push({
+        address: variable.addr + offset,
+        base: variable.addr,
+        byteOffset: offset,
+        byteSize,
+        declaration: offset === 0 ? this.variableDeclaration(name, variable) : "",
+        items: [],
+        variable,
+        isNew,
+        allocation,
+      });
+    }
+
+    if (variable.isStruct) {
+      for (const field of variable.structDef.fields) {
+        const storedField = variable.fields[field.name];
+        const fieldSize = field.arraySize
+          ? field.arraySize * getTypeSize(field.type)
+          : getTypeSize(field.type);
+        this.addRowItem(rows, field.offset, fieldSize, {
+          label: `${this.formatType(field.type)} .${field.name}`,
+          value: this.formatVal(storedField.value, field.type),
+        });
+      }
+    } else if (variable.isArray) {
+      const elemType = variable.elemType || variable.type;
+      const elemSize = getTypeSize(elemType);
+      for (let i = 0; i < variable.size; i++) {
+        this.addRowItem(rows, i * elemSize, elemSize, {
+          label: this.formatArrayIndex(i, variable),
+          value: this.formatVal(variable.values[i], elemType),
+        });
+      }
+    } else {
+      this.addRowItem(rows, 0, byteSize, {
+        label: "",
+        value: this.formatVal(variable.value, variable.type),
+        scalar: true,
+      });
+    }
+
+    if (rows.length > 1) {
+      const groupHue = allocation ? allocation.hue : this.allocationHue(variable.addr);
+      for (const row of rows) row.groupHue = groupHue;
+    }
+
+    return rows;
+  }
+
+  renderRowItems(row) {
+    if (row.items.length === 0) {
+      return `<span class="memory-row-continuation">padding</span>`;
+    }
+
+    const visibleItems = row.items.filter((item) => !item.continuation);
+    if (visibleItems.length === 0) {
+      return `<span class="memory-row-continuation" aria-hidden="true"></span>`;
+    }
+
+    if (visibleItems.length === 1 && visibleItems[0].scalar) {
+      const nullClass = this.isPointer(row.variable.type) && row.variable.value === 0
+        ? "null-val"
+        : "";
+      if (this.isPointer(row.variable.type)) {
+        return this.renderPointerValue(
+          "",
+          row.variable.value,
+          row.variable.type,
+          nullClass,
+          row.allocation,
+        );
+      }
+      return `<span class="mem-value">${visibleItems[0].value}</span>`;
+    }
+
+    return `<span class="memory-row-items">${visibleItems
+      .map(
+        (item) =>
+          `<span class="memory-row-item"><span class="memory-row-item-label">${item.label}</span><span class="memory-row-item-value">${item.value}</span></span>`,
+      )
+      .join("")}</span>`;
+  }
+
+  renderMemoryRow(row, regionClass) {
+    const classes = [regionClass, "memory-row"];
+    if (row.isNew) classes.push("new-cell");
+    if (row.allocation) classes.push("allocation-linked");
+    if (row.allocation && row.allocation.freed) classes.push("allocation-freed");
+    if (Number.isFinite(row.groupHue)) classes.push("memory-row-grouped");
+    const name = row.declaration
+      ? this.renderMemName(row.declaration)
+      : `<span class="memory-row-blank" aria-hidden="true"></span>`;
+    const styles = [];
+    if (row.allocation) styles.push(`--alloc-hue:${row.allocation.hue}`);
+    if (Number.isFinite(row.groupHue)) styles.push(`--row-group-hue:${row.groupHue}`);
+    const styleAttr = styles.length > 0 ? ` style="${styles.join(";")}"` : "";
+    return `<div class="${classes.join(" ")}" data-addr="${row.address}" data-base="${row.base}"${styleAttr}>${name}${this.renderRowItems(row)}<span class="mem-addr">${this.hex(row.address)}</span></div>`;
+  }
+
   renderStack(mem) {
     if (mem.stack.length === 0) {
       this.stackEl.innerHTML = '<div class="empty-state">Run code to see stack</div>';
@@ -146,53 +284,12 @@ class Visualizer {
         html += `<div class="mem-cell"><span class="mem-name" style="color:var(--text-muted);font-style:italic">no vars</span></div>`;
       }
 
+      const rows = [];
       for (const [name, v] of frame.vars) {
-        const isNew = this.isNewVar(frame.name, name);
-        if (v.isStruct) {
-          html += `<div class="mem-cell ${isNew ? "new-cell" : ""}" data-base="${v.addr}">`;
-          html += this.renderMemName(`${v.type.base} ${name}`);
-          html += `<span class="size-info">${v.structDef.size} bytes</span><span class="mem-addr">${this.hex(v.addr)}</span></div>`;
-          html += this.renderStructFields(v);
-        } else if (v.isArray) {
-          html += `<div class="mem-cell ${isNew ? "new-cell" : ""}" data-base="${v.addr}">`;
-          html += this.renderMemName(
-            `${v.type.base} ${name}${this.formatArrayDimensions(v)}`,
-          );
-          html += `<span></span><span class="mem-addr">${this.hex(v.addr)}</span></div>`;
-          html += `<div class="array-cells">`;
-          for (let j = 0; j < v.size; j++) {
-            html += `<div class="array-cell"><span class="array-index">${this.formatArrayIndex(j, v)}</span><span class="array-val">${v.values[j]}</span></div>`;
-          }
-          html += `</div>`;
-        } else {
-          const ptrClass = this.isPointer(v.type) ? "pointer-val" : "";
-          const nullClass = this.isPointer(v.type) && v.value === 0 ? "null-val" : "";
-          const typeStr = v.type.base + (v.type.pointer > 0 ? "*".repeat(v.type.pointer) : "");
-          const allocation =
-            this.isPointer(v.type) && mem.heap.has(v.value)
-              ? this.allocationMeta(v.value, mem.heap.get(v.value).freed)
-              : null;
-          const cellClasses = ["mem-cell"];
-          if (isNew) cellClasses.push("new-cell");
-          if (allocation) cellClasses.push("allocation-linked");
-          if (allocation && allocation.freed) cellClasses.push("allocation-freed");
-
-          html += `<div class="${cellClasses.join(" ")}" data-addr="${v.addr}"${this.allocationStyleAttr(allocation)}>`;
-          html += this.renderMemName(`<span class="mem-type">${typeStr}</span> ${name}`);
-          if (this.isPointer(v.type)) {
-            html += this.renderPointerValue(
-              name,
-              v.value,
-              v.type,
-              `${ptrClass} ${nullClass}`.trim(),
-              allocation,
-            );
-          } else {
-            html += `<span class="mem-value ${ptrClass} ${nullClass}">${this.formatVal(v.value, v.type)}</span>`;
-          }
-          html += `<span class="mem-addr">${this.hex(v.addr)}</span></div>`;
-        }
+        rows.push(...this.buildVariableRows(name, v, mem, this.isNewVar(frame.name, name)));
       }
+      rows.sort((a, b) => b.address - a.address);
+      html += rows.map((row) => this.renderMemoryRow(row, "mem-cell")).join("");
       html += `</div></div></div>`;
     }
     this.stackEl.innerHTML = html;
@@ -215,17 +312,12 @@ class Visualizer {
       html += `<span class="heap-block-title"><span class="heap-badge">malloc</span><span class="heap-block-address">${this.hex(addr)}</span></span>`;
       html += `<span class="size-info">${block.size} bytes${block.freed ? " (freed)" : ""}</span></div>`;
       html += `<div class="heap-block-body">`;
-      if (block.elemCount <= 8) {
-        html += `<div class="array-cells">`;
-        for (let j = 0; j < block.elemCount; j++) {
-          const cellAddr = addr + j * 4;
-          html += `<div class="array-cell"><span class="array-index">${this.hex(cellAddr)}</span>`;
-          html += `<span class="array-val ${block.freed ? "freed" : ""}">${block.values[j]}</span></div>`;
-        }
-        html += `</div>`;
-      } else {
-        html += `<div class="mem-cell"><span class="mem-name">${block.elemCount} cells</span>`;
-        html += `<span class="mem-value">[${block.values.slice(0, 4).join(", ")}...]</span></div>`;
+      for (let j = 0; j < block.elemCount; j++) {
+        const cellAddr = addr + j * 4;
+        html += `<div class="mem-cell memory-row" data-addr="${cellAddr}">`;
+        html += this.renderMemName(`<span class="mem-type">slot</span> [${j}]`);
+        html += `<span class="mem-value ${block.freed ? "freed" : ""}">${block.values[j]}</span>`;
+        html += `<span class="mem-addr">${this.hex(cellAddr)}</span></div>`;
       }
       html += `</div></div>`;
     }
@@ -239,45 +331,13 @@ class Visualizer {
     }
 
     let html = "";
+    const rows = [];
     for (const [name, v] of mem.globals) {
       const displayName = v.displayName || name;
-      if (v.isStruct) {
-        html += `<div class="global-cell" data-base="${v.addr}">`;
-        html += this.renderMemName(`${v.type.base} ${displayName}`);
-        html += `<span class="size-info">${v.structDef.size} bytes</span><span class="mem-addr">${this.hex(v.addr)}</span></div>`;
-        html += this.renderStructFields(v);
-      } else if (v.isArray) {
-        html += `<div class="global-cell" data-base="${v.addr}">`;
-        html += this.renderMemName(
-          `${v.type.base} ${displayName}${this.formatArrayDimensions(v)}`,
-        );
-        html += `<span></span><span class="mem-addr">${this.hex(v.addr)}</span></div>`;
-        html += `<div class="array-cells">`;
-        for (let j = 0; j < v.size; j++) {
-          html += `<div class="array-cell"><span class="array-index">${this.formatArrayIndex(j, v)}</span><span class="array-val">${v.values[j]}</span></div>`;
-        }
-        html += `</div>`;
-      } else {
-        const typeStr = v.type.base + (v.type.pointer > 0 ? "*".repeat(v.type.pointer) : "");
-        const ptrClass = this.isPointer(v.type) ? "pointer-val" : "";
-        const allocation =
-          this.isPointer(v.type) && mem.heap.has(v.value)
-            ? this.allocationMeta(v.value, mem.heap.get(v.value).freed)
-            : null;
-        const cellClasses = ["global-cell"];
-        if (allocation) cellClasses.push("allocation-linked");
-        if (allocation && allocation.freed) cellClasses.push("allocation-freed");
-
-        html += `<div class="${cellClasses.join(" ")}" data-addr="${v.addr}"${this.allocationStyleAttr(allocation)}>`;
-        html += this.renderMemName(`<span class="mem-type">${typeStr}</span> ${displayName}`);
-        if (this.isPointer(v.type)) {
-          html += this.renderPointerValue(displayName, v.value, v.type, ptrClass, allocation);
-        } else {
-          html += `<span class="mem-value ${ptrClass}">${this.formatVal(v.value, v.type)}</span>`;
-        }
-        html += `<span class="mem-addr">${this.hex(v.addr)}</span></div>`;
-      }
+      rows.push(...this.buildVariableRows(displayName, v, mem));
     }
+    rows.sort((a, b) => a.address - b.address);
+    html += rows.map((row) => this.renderMemoryRow(row, "global-cell")).join("");
     this.globalEl.innerHTML = html;
   }
 

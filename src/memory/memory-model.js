@@ -11,6 +11,10 @@ const TYPE_SIZES_BYTES = {
 const POINTER_SIZE_BYTES = 8;
 const DEFAULT_TYPE_SIZE_BYTES = 4;
 
+function getAllocatedSize(size) {
+  return size + ((4 - (size % 4)) % 4);
+}
+
 /**
  * A parsed C type object produced by Parser.parseType().
  *
@@ -236,9 +240,10 @@ class MemoryModel {
     const name = `__str_lit_${this.nextStringLiteralId++}`;
     const type = { base: "char", pointer: 0 };
     const size = chars.length;
+    const allocatedSize = getAllocatedSize(size);
     const addr = this.nextGlobalAddr;
 
-    this.nextGlobalAddr += size + ((4 - (size % 4)) % 4);
+    this.nextGlobalAddr += allocatedSize;
 
     this.globals.set(name, {
       type,
@@ -248,6 +253,8 @@ class MemoryModel {
       values: chars,
       elemType: type,
       isStringLiteral: true,
+      byteSize: size,
+      allocatedSize,
     });
 
     return addr;
@@ -294,8 +301,9 @@ class MemoryModel {
    */
   declareGlobal(name, type, value, arraySize, arrayInit) {
     const size = arraySize ? arraySize * getTypeSize(type) : getTypeSize(type);
+    const allocatedSize = getAllocatedSize(size);
     const addr = this.nextGlobalAddr;
-    this.nextGlobalAddr += size + ((4 - (size % 4)) % 4);
+    this.nextGlobalAddr += allocatedSize;
 
     if (arraySize) {
       const values = [];
@@ -313,6 +321,8 @@ class MemoryModel {
         size: arraySize,
         values,
         elemType: type,
+        byteSize: size,
+        allocatedSize,
       });
     } else {
       this.globals.set(name, {
@@ -320,6 +330,8 @@ class MemoryModel {
         addr,
         value: value !== null ? value : getDefaultValueForType(type),
         isArray: false,
+        byteSize: size,
+        allocatedSize,
       });
     }
     return addr;
@@ -416,7 +428,8 @@ class MemoryModel {
     }
 
     const size = arraySize ? arraySize * getTypeSize(type) : getTypeSize(type);
-    frame.currentAddr -= size + ((4 - (size % 4)) % 4);
+    const allocatedSize = getAllocatedSize(size);
+    frame.currentAddr -= allocatedSize;
     const addr = frame.currentAddr;
 
     if (arraySize) {
@@ -433,6 +446,8 @@ class MemoryModel {
         size: arraySize,
         values,
         elemType: type,
+        byteSize: size,
+        allocatedSize,
       });
     } else {
       frame.vars.set(name, {
@@ -440,6 +455,8 @@ class MemoryModel {
         addr,
         value: value !== null && value !== undefined ? value : getDefaultValueForType(type),
         isArray: false,
+        byteSize: size,
+        allocatedSize,
       });
     }
     return addr;

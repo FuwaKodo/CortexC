@@ -1115,6 +1115,93 @@ main {
     box-shadow 0.2s ease;
 }
 
+.memory-row {
+  grid-template-columns: minmax(84px, 0.75fr) minmax(92px, 1.25fr) 76px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.memory-row:last-child {
+  border-bottom: 0;
+}
+
+.memory-row.memory-row-grouped {
+  background: hsl(var(--row-group-hue) 72% 52% / 0.08);
+  border-bottom-color: hsl(var(--row-group-hue) 72% 52% / 0.2);
+  box-shadow: inset 3px 0 0 hsl(var(--row-group-hue) 72% 52% / 0.62);
+}
+
+.memory-row.memory-row-grouped:hover {
+  background: hsl(var(--row-group-hue) 72% 52% / 0.13);
+}
+
+.memory-row-blank {
+  min-width: 0;
+}
+
+.memory-row-items {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.memory-row-item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 1px 5px;
+  border: 1px solid rgba(57, 211, 83, 0.15);
+  border-radius: 3px;
+  background: rgba(57, 211, 83, 0.08);
+}
+
+.memory-row-item-label {
+  color: var(--text-muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.memory-row-item-value {
+  color: var(--accent-cyan);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.memory-row-continuation {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: italic;
+}
+
+.memory-row .mem-value {
+  justify-self: start;
+}
+
+.memory-row .mem-value.pointer-source {
+  box-sizing: border-box;
+  max-width: 100%;
+  gap: 4px;
+  padding: 2px 6px;
+}
+
+.memory-row .pointer-chip-prefix {
+  padding: 2px 4px;
+}
+
+.memory-row .pointer-chip-value {
+  font-size: 11px;
+}
+
+.memory-row .mem-addr {
+  white-space: nowrap;
+}
+
 /* ===== CONSOLE ===== */
 .console-panel {
   border-top: 1px solid var(--border);

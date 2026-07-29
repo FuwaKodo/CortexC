@@ -297,30 +297,163 @@ class Visualizer {
 
   renderHeap(mem) {
     if (mem.heap.size === 0) {
-      this.heapEl.innerHTML = '<div class="empty-state">No heap allocations</div>';
+      this.heapEl.innerHTML =
+        '<div class="empty-state">No heap allocations</div>';
       return;
     }
 
     let html = "";
+
     for (const [addr, block] of mem.heap) {
       const allocation = this.allocationMeta(addr, block.freed);
-      const blockClasses = ["heap-block", "allocation-linked"];
-      if (block.freed) blockClasses.push("freed", "allocation-freed");
+      const blockClasses = [
+        "heap-block",
+        "allocation-linked",
+      ];
 
-      html += `<div class="${blockClasses.join(" ")}" data-base="${addr}"${this.allocationStyleAttr(allocation)}>`;
-      html += `<div class="heap-block-header" data-addr="${addr}">`;
-      html += `<span class="heap-block-title"><span class="heap-badge">malloc</span><span class="heap-block-address">${this.hex(addr)}</span></span>`;
-      html += `<span class="size-info">${block.size} bytes${block.freed ? " (freed)" : ""}</span></div>`;
-      html += `<div class="heap-block-body">`;
-      for (let j = 0; j < block.elemCount; j++) {
-        const cellAddr = addr + j * 4;
-        html += `<div class="mem-cell memory-row" data-addr="${cellAddr}">`;
-        html += this.renderMemName(`<span class="mem-type">slot</span> [${j}]`);
-        html += `<span class="mem-value ${block.freed ? "freed" : ""}">${block.values[j]}</span>`;
-        html += `<span class="mem-addr">${this.hex(cellAddr)}</span></div>`;
+      if (block.freed) {
+        blockClasses.push("freed", "allocation-freed");
       }
-      html += `</div></div>`;
+
+      const isCharArray =
+        Array.isArray(block.bytes) &&
+        block.type?.base === "char" &&
+        block.type?.pointer === 0;
+
+      const displayType = isCharArray
+        ? "char"
+        : this.formatType(
+            block.type || {
+              base: "int",
+              pointer: 0,
+            },
+          );
+
+      const arrayLength = isCharArray
+        ? block.size
+        : block.elemCount;
+
+      html += `
+        <div
+          class="${blockClasses.join(" ")}"
+          data-base="${addr}"
+          ${this.allocationStyleAttr(allocation)}
+        >
+      `;
+
+      html += `
+        <div
+          class="heap-block-header"
+          data-addr="${addr}"
+        >
+      `;
+
+      html += `
+        <span class="heap-block-title">
+          <span class="heap-badge">malloc</span>
+          <span class="heap-block-address">
+            ${this.hex(addr)}
+          </span>
+        </span>
+      `;
+
+      html += `
+        <span class="size-info">
+          ${block.size} bytes
+          ${block.freed ? " (freed)" : ""}
+        </span>
+      `;
+
+      html += `</div>`;
+      html += `<div class="heap-block-body">`;
+
+      for (let rowIndex = 0; rowIndex < block.elemCount; rowIndex++) {
+        const cellAddr = addr + rowIndex * 4;
+        const rowByteStart = rowIndex * 4;
+        const rowByteEnd = Math.min(
+          rowByteStart + 4,
+          block.size,
+        );
+
+        html += `
+          <div
+            class="mem-cell memory-row memory-row-grouped"
+            data-addr="${cellAddr}"
+            data-base="${addr}"
+            style="--row-group-hue:${allocation.hue}"
+          >
+        `;
+
+        if (rowIndex === 0) {
+          html += this.renderMemName(
+            `<span class="mem-type">${displayType}</span>[${arrayLength}]`,
+          );
+        } else {
+          html += `
+            <span
+              class="memory-row-blank"
+              aria-hidden="true"
+            ></span>
+          `;
+        }
+
+        html += `<span class="memory-row-items">`;
+
+        if (isCharArray) {
+          for (
+            let byteIndex = rowByteStart;
+            byteIndex < rowByteEnd;
+            byteIndex++
+          ) {
+            const value = block.bytes[byteIndex] ?? 0;
+
+            html += `
+              <span class="memory-row-item">
+                <span class="memory-row-item-label">
+                  [${byteIndex}]
+                </span>
+
+                <span class="memory-row-item-value ${
+                  block.freed ? "freed" : ""
+                }">
+                  ${value}
+                </span>
+              </span>
+            `;
+          }
+        } else {
+          const value = block.values[rowIndex] ?? 0;
+
+          html += `
+            <span class="memory-row-item">
+              <span class="memory-row-item-label">
+                [${rowIndex}]
+              </span>
+
+              <span class="memory-row-item-value ${
+                block.freed ? "freed" : ""
+              }">
+                ${this.formatVal(value, block.type)}
+              </span>
+            </span>
+          `;
+        }
+
+        html += `</span>`;
+
+        html += `
+          <span class="mem-addr">
+            ${this.hex(cellAddr)}
+          </span>
+        `;
+
+        html += `</div>`;
+      }
+
+      html += `</div>`;
+      html += `</div>`;
     }
+
     this.heapEl.innerHTML = html;
   }
 

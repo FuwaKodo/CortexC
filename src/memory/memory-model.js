@@ -272,12 +272,23 @@ class MemoryModel {
     let output = "";
     let currentAddr = addr;
 
+    const charType = {
+      base: "char",
+      pointer: 0,
+    };
+
     for (let i = 0; i < 1000; i++) {
       const resolved = this.resolveAddress(currentAddr);
-      if (!resolved) break;
 
-      const value = this.deref(currentAddr);
-      if (value === 0) break;
+      if (!resolved) {
+        break;
+      }
+
+      const value = this.deref(currentAddr, charType);
+
+      if (value === 0) {
+        break;
+      }
 
       output += String.fromCharCode(value);
       currentAddr += 1;
@@ -567,6 +578,8 @@ class MemoryModel {
       size,
       elemCount,
       values: new Array(elemCount).fill(0),
+      // Individually addressable bytes for char data.
+      bytes: new Array(size).fill(0),
       type: requestedType || { base: "int", pointer: 0 },
       freed: false,
     });
@@ -636,8 +649,17 @@ class MemoryModel {
   resolveAddress(addr) {
     for (const [base, block] of this.heap) {
       if (addr >= base && addr < base + block.size) {
-        const idx = Math.floor((addr - base) / 4);
-        if (idx < block.elemCount) return { kind: "heap", base, block, index: idx };
+        const offset = addr - base;
+        const index = Math.floor(offset / 4);
+        const byteOffset = offset % 4;
+        return {
+          kind: "heap",
+          base,
+          block,
+          index,
+          offset,
+          byteOffset,
+        };
       }
     }
     for (const frame of this.stack) {
@@ -698,10 +720,21 @@ class MemoryModel {
    * @param {number} addr - Address to read from
    * @returns {*} Value at that address, or 0 if the address cannot be resolved
    */
-  deref(addr) {
+  deref(addr, type = null) {
     const resolved = this.resolveAddress(addr);
     if (!resolved) return 0;
-    if (resolved.kind === "heap") return resolved.block.values[resolved.index];
+    if (resolved.kind === "heap") {
+      const isByteValue =
+      type &&
+      type.pointer === 0 &&
+      getTypeSize(type) === 1;
+
+      if (isByteValue) {
+        return resolved.block.bytes[resolved.offset] ?? 0;
+      }
+
+      return resolved.block.values[resolved.index] ?? 0;
+    }
     if (resolved.field) return resolved.variable.fields[resolved.field.name].value;
     if (resolved.kind.endsWith("_array")) return resolved.variable.values[resolved.index];
     return resolved.variable.value;
@@ -714,12 +747,33 @@ class MemoryModel {
    * @param {*} value - Value to store
    * @returns {boolean} True if the write succeeded
    */
-  setDeref(addr, value) {
+  setDeref(addr, value, type = null) {
     const resolved = this.resolveAddress(addr);
-    if (!resolved) return false;
+
+    if (!resolved) {
+      return false;
+    }
+
     if (resolved.kind === "heap") {
-      if (resolved.block.freed) return false;
+      if (resolved.block.freed) {
+        return false;
+      }
+
+      const isByteValue =
+        type &&
+        type.pointer === 0 &&
+        getTypeSize(type) === 1;
+
+      if (isByteValue) {
+        resolved.block.bytes[resolved.offset] = value;
+        resolved.block.type = { ...type };
+        return true;
+      }
+
       resolved.block.values[resolved.index] = value;
+      if (type) {
+        resolved.block.type = { ...type };
+      }
       return true;
     }
     if (resolved.field) {

@@ -806,13 +806,20 @@ class Interpreter {
 
   readLValue(target) {
     if (target.isAggregate) return target.address;
-    return this.mem.deref(target.address);
+    return this.mem.deref(target.address, target.type);
   }
 
   writeLValue(target, value) {
-    if (target.isAggregate) this.crash("Expression is not assignable.");
-    if (!this.mem.setDeref(target.address, value)) {
-      this.crash(`Invalid pointer write at 0x${target.address.toString(16).toUpperCase()}.`);
+    if (target.isAggregate) {
+      this.crash("Expression is not assignable.");
+    }
+
+    if (!this.mem.setDeref(target.address, value, target.type)) {
+      this.crash(
+        `Invalid pointer write at 0x${target.address
+          .toString(16)
+          .toUpperCase()}.`,
+      );
     }
   }
 
@@ -1035,7 +1042,12 @@ class Interpreter {
         if (target.kind === "heap" && target.block.freed)
           this.crash(`Write after free at 0x${ptr.value.toString(16).toUpperCase()}.`, stmt.line);
         const val = this.evalExpr(stmt.value);
-        if (!this.mem.setDeref(ptr.value, val))
+        const pointeeType = {
+          ...ptr.type,
+          pointer: ptr.type.pointer - 1,
+        };
+        
+        if (!this.mem.setDeref(ptr.value, val, pointeeType))
           this.crash(
             `Invalid pointer write at 0x${ptr.value.toString(16).toUpperCase()}.`,
             stmt.line,
@@ -1056,7 +1068,12 @@ class Interpreter {
         if (target.kind === "heap" && target.block.freed)
           this.crash(`Write after free at 0x${ptr.value.toString(16).toUpperCase()}.`, stmt.line);
 
-        const currentValue = this.mem.deref(ptr.value); 
+        const pointeeType = {
+          ...ptr.type,
+          pointer: ptr.type.pointer - 1,
+        };
+
+        const currentValue = this.mem.deref(ptr.value, pointeeType);
         const rhs = this.evalExpr(stmt.value)
         if (stmt.op === "/=" && rhs === 0) {
           this.crash(`Division by zero while updating '*${stmt.target}'.`, stmt.line);
@@ -1070,7 +1087,7 @@ class Interpreter {
         };
 
         const nextValue = ops[stmt.op](currentValue, rhs); 
-        if (!this.mem.setDeref(ptr.value, nextValue)) {
+        if (!this.mem.setDeref(ptr.value, nextValue, pointeeType)) {
           this.crash(
             `Invalid pointer write at 0x${ptr.value.toString(16).toUpperCase()}.`,
             stmt.line,
